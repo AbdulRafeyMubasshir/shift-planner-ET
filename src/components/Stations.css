@@ -1,0 +1,140 @@
+/* Stations container */
+.stations-container {
+    width: 80%;
+    max-width: 1300px; /* To ensure the container doesn’t stretch too wide on large screens */
+    margin: 30px auto; /* Adds some spacing above and below the container */
+    margin-top: 2700px;
+    padding: 20px;
+    background-color: #f9f9f9;
+    border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Modal overlay to cover the entire screen */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6); /* Slightly darker overlay for better focus */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000; /* Make sure it's on top */
+}
+
+/* Modal content box */
+.modal-content {
+    background-color: white;
+    padding: 20px;
+    border-radius: 12px;
+    width: 320px; /* Slightly wider for better spacing */
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
+    position: relative;
+    transition: transform 0.3s ease-in-out; /* Smooth transition effect */
+    transform: scale(0.9); /* Start scaled down */
+    opacity: 0; /* Initially invisible */
+}
+
+/* Modal animation */
+.modal-overlay .modal-content {
+    transform: scale(1);
+    opacity: 1; /* Fade in effect */
+}
+
+/* Style for the table */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 30px;
+    background-color: #fff; /* A nice white background for the table */
+    border-radius: 8px;
+    overflow: hidden; /* To prevent borders from sticking out if rounded */
+}
+
+/* Table headings */
+th, td {
+    padding: 12px 16px;
+    text-align: left;
+    border: 1px solid #ddd;
+}
+
+/* Table headers styling */
+th {
+    background-color: #f4f4f4;
+    font-weight: bold;
+    text-transform: uppercase;
+    color: #333;
+}
+
+/* Table rows styling */
+td {
+    color: #555;
+    font-size: 14px; /* Smaller text size for better readability */
+}
+
+/* Input fields inside the modal */
+input {
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 12px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    background-color: #fafafa;
+    font-size: 14px; /* Same font size for consistency */
+}
+
+/* Buttons inside the modal */
+button {
+    padding: 10px 14px;
+    border: none;
+    background-color: #007BFF;
+    color: white;
+    cursor: pointer;
+    border-radius: 6px;
+    font-size: 14px;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+}
+
+button:hover {
+    background-color: #0056b3;
+    transform: translateY(-2px); /* Adds a subtle lift on hover */
+}
+
+/* Optional: Style for Cancel button */
+button:nth-child(2) {
+    background-color: #f44336;
+}
+
+button:nth-child(2):hover {
+    background-color: #d32f2f;
+    transform: translateY(-2px); /* Adds a subtle lift for the cancel button */
+}
+
+/* Styling for clickable rows */
+.clickable-row {
+    cursor: pointer;
+}
+
+.clickable-row:hover {
+    background-color: #f0f0f0;
+    transition: background-color 0.3s ease;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+    .stations-container {
+        width: 95%; /* Make the container smaller on mobile devices */
+        padding: 15px; /* Less padding on mobile */
+    }
+
+    .modal-content {
+        width: 90%; /* Make the modal content width responsive */
+        padding: 15px;
+    }
+
+    table th, table td {
+        padding: 8px 12px; /* Adjust padding for smaller screens */
+    }
+}

@@ -1,0 +1,195 @@
+
+/* Dashboard container */
+.dashboard-container {
+  width: 90%;
+  margin: 20px auto;
+  margin-top: 1275px;
+  padding: 20px;
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Header */
+.dashboard-header {
+  text-align: center;
+  font-size: 2rem;
+  color: #333;
+  margin-bottom: 20px;
+}
+
+/* Description */
+.dashboard-description {
+  text-align: center;
+  font-size: 1rem;
+  color: #777;
+  margin-bottom: 20px;
+}
+/* Container that holds the buttons */
+.button-container {
+  display: flex;
+  gap: 10px; /* Adds space between buttons */
+  justify-content: center; /* Centers the buttons horizontally */
+  align-items: center; /* Aligns the buttons vertically in the middle */
+}
+
+/* Common button styling */
+button {
+  padding: 10px 20px;
+  border-radius: 5px;
+  font-size: 16px;
+  cursor: pointer;
+  border: none;
+  transition: background-color 0.3s, transform 0.3s;
+}
+
+/* Styling for individual buttons */
+.excel-button {
+  background-color: #ff9800;
+  color: white;
+}
+
+.pdf-button {
+  background-color: #2196F3;
+  color: white;
+}
+
+.save-button {
+  background-color: #4CAF50;
+  color: white;
+}
+
+.generate-schedule-button {
+  background-color: #9C27B0;
+  color: white;
+}
+
+/* Hover effects */
+button:hover {
+  transform: scale(1.05);
+}
+
+button:focus {
+  outline: none;
+}
+
+/* Optional: Active state for buttons */
+button:active {
+  transform: scale(0.98);
+}
+
+/* Buttons */
+.export-button {
+  background-color: #007BFF;
+  color: white;
+  padding: 10px 20px;
+  margin: 10px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.export-button:hover {
+  background-color: #0056b3;
+}
+
+/* Success Message Styling */
+.success-message {
+  background-color: #4caf50;  /* Green background */
+  color: white;               /* White text */
+  padding: 10px;
+  margin-top: 10px;
+  text-align: center;
+  border-radius: 5px;
+  font-size: 16px;
+  transition: opacity 1s ease-out;
+  opacity: 1;
+}
+
+/* Success Message Hidden After Timeout */
+.success-message.fade-out {
+  opacity: 0;
+  transition: opacity 1s ease-out;
+}
+
+/* Table Wrapper */
+.dashboard-table-wrapper {
+  overflow-x: auto;
+}
+
+/* Table Styling */
+.dashboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+  font-family: Arial, sans-serif;
+  background-color: #f9f9f9;
+}
+
+.dashboard-table th, .dashboard-table td {
+  padding: 12px;
+  text-align: center;
+  border: 1px solid #ddd;
+}
+
+.dashboard-table th {
+  background-color: #007BFF;
+  color: white;
+  font-weight: bold;
+}
+
+.dashboard-table td {
+  background-color: #fff;
+}
+
+.dashboard-table .unassigned {
+  background-color: #f7f7f7;
+}
+
+/* Input Fields in Table */
+.dashboard-table input {
+  width: 90%;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 1rem;
+  text-align: center;
+}
+
+.dashboard-table input:focus {
+  border-color: #007BFF;
+  outline: none;
+}
+
+.dashboard-table input::placeholder {
+  color: #bbb;
+}
+
+/* Row Hover Effect */
+.dashboard-table tr:hover {
+  background-color: #f2f2f2;
+}
+
+/* Hours Worked Column */
+.dashboard-table td:last-child {
+  font-weight: bold;
+  color: #333;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .dashboard-container {
+    width: 95%;
+    padding: 10px;
+  }
+
+  .dashboard-table th, .dashboard-table td {
+    padding: 8px;
+    font-size: 0.9rem;
+  }
+
+  .export-button {
+    padding: 8px 16px;
+  }
+}

@@ -1,0 +1,118 @@
+/* Base Styles */
+nav {
+    background-color: #34495e; /* Dark blue-gray background */
+    color: white;
+    padding: 20px 40px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); /* Soft shadow for depth */
+    display: flex;
+    justify-content: center; /* Center the navigation items */
+    align-items: center;
+    border-bottom: 2px solid #2c3e50; /* Darker border for sleekness */
+  }
+  
+  nav ul {
+    display: flex;
+    justify-content: center; /* Ensure the items are centered */
+    align-items: center;
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+  }
+  
+  nav li {
+    margin-right: 30px; /* Same spacing between items */
+  }
+  
+  nav li:last-child {
+    margin-right: 0; /* Remove margin on the last item */
+  }
+  
+  nav a {
+    text-decoration: none;
+    color: white;
+    font-size: 18px;
+    font-weight: 500;
+    transition: color 0.3s ease, transform 0.3s ease, letter-spacing 0.3s ease; /* Smooth transitions */
+    position: relative;
+  }
+  
+  nav a:hover {
+    color: #f39c12; /* Gold hover effect for cool contrast */
+    transform: translateY(-2px); /* Slight lift effect */
+    letter-spacing: 1px; /* Letter spacing effect for a stylish look */
+  }
+  
+  nav a.active {
+    color: #f39c12; /* Active link color */
+    font-weight: 600; /* Bold active link */
+  }
+  
+  nav .logo {
+    font-size: 24px;
+    font-weight: bold;
+    color: #ecf0f1; /* Light grey color for logo */
+    letter-spacing: 2px; /* Spacing for the logo text */
+    text-transform: uppercase; /* Uppercase letters for a sleek look */
+  }
+  
+  nav .logo:hover {
+    color: #f39c12; /* Gold hover effect for the logo */
+    transform: translateY(-2px); /* Slight lift effect */
+  }
+  
+  /* Button (Logout) */
+  nav button {
+    padding: 10px 25px;
+    background-color: #e74c3c; /* Cool red for logout */
+    border: none;
+    color: white;
+    font-size: 16px;
+    font-weight: 500;
+    border-radius: 30px; /* Rounded corners for button */
+    cursor: pointer;
+    transition: background-color 0.3s ease, transform 0.3s ease;
+  }
+  
+  nav button:hover {
+    background-color: #c0392b; /* Darker red on hover */
+    transform: translateY(-2px); /* Slight lift effect */
+  }
+  
+  nav button:focus {
+    outline: none; /* Remove the focus outline for a cleaner look */
+  }
+  
+  /* Hover Effects for Links */
+  nav a:hover,
+  nav button:hover {
+    transform: translateY(-2px); /* Lifting effect */
+  }
+  
+  nav a:active,
+  nav button:active {
+    transform: translateY(2px); /* Slight downward effect on click */
+  }
+  
+  /* Responsive Design */
+  @media (max-width: 768px) {
+    nav {
+      flex-direction: column;
+      align-items: center;
+      padding: 20px 10px; /* Adjust padding for smaller screens */
+    }
+  
+    nav ul {
+      flex-direction: column;
+      margin-top: 15px;
+    }
+  
+    nav li {
+      margin-right: 0;
+      margin-bottom: 15px; /* Vertical space between items */
+    }
+  
+    nav button {
+      margin-top: 20px;
+    }
+  }
+  
