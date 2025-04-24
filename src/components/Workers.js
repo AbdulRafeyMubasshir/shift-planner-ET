@@ -9,7 +9,7 @@ const Workers = () => {
   const [selectedWorker, setSelectedWorker] = useState(null);
   const [showModal, setShowModal] = useState(false);
 
-  // NEW: Separate state for editable text inputs
+  // Separate state for editable text inputs
   const [availabilityInput, setAvailabilityInput] = useState('');
   const [canWorkStationsInput, setCanWorkStationsInput] = useState('');
   const [cannotWorkStationsInput, setCannotWorkStationsInput] = useState('');
@@ -18,6 +18,7 @@ const Workers = () => {
   useEffect(() => {
     const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (saved) {
+      console.log('Loaded saved workers from localStorage:', saved);
       setWorkers(JSON.parse(saved));
     }
   }, []);
@@ -33,35 +34,59 @@ const Workers = () => {
 
   const handleFileUpload = (event) => {
     const file = event.target.files?.[0];
-    if (!file) return;
+    if (!file) {
+      console.log('No file selected');
+      return;
+    }
+
+    console.log('Selected file:', file.name);
 
     const reader = new FileReader();
 
     reader.onload = (e) => {
       const data = new Uint8Array(e.target.result);
-      const workbook = XLSX.read(data, { type: 'array' });
+      console.log('Raw file data:', data);
 
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet);
+      try {
+        const workbook = XLSX.read(data, { type: 'array' });
+        console.log('Workbook:', workbook);
 
-      const formattedData = jsonData.map((row, index) => ({
-        id: index,
-        name: row['Name'] || '',
-        availability: row['Availability'] ? row['Availability'].split(', ') : [],
-        preferredShift: row['Preferred Shift'] || '',
-        canWorkStations: row['Can Work Stations'] ? row['Can Work Stations'].split(', ') : [],
-        cannotWorkStations: row['Cannot Work Stations'] ? row['Cannot Work Stations'].split(', ') : [],
-      }));
+        const sheetName = workbook.SheetNames[0];
+        console.log('Sheet name:', sheetName);
 
-      setWorkers(formattedData);
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(formattedData));
+        const worksheet = workbook.Sheets[sheetName];
+        console.log('Worksheet:', worksheet);
+
+        const jsonData = XLSX.utils.sheet_to_json(worksheet);
+        console.log('Parsed JSON data:', jsonData);
+
+        const formattedData = jsonData.map((row, index) => ({
+          id: index,
+          name: row['Name'] || '',
+          availability: row['Availability'] ? row['Availability'].split(', ') : [],
+          preferredShift: row['Preferred Shift'] || '',
+          canWorkStations: row['Can Work Stations'] ? row['Can Work Stations'].split(', ') : [],
+          cannotWorkStations: row['Cannot Work Stations'] ? row['Cannot Work Stations'].split(', ') : [],
+        }));
+
+        console.log('Formatted worker data:', formattedData);
+
+        setWorkers(formattedData);
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(formattedData));
+      } catch (err) {
+        console.error('Error parsing Excel file:', err);
+      }
+    };
+
+    reader.onerror = (error) => {
+      console.error('Error reading file:', error);
     };
 
     reader.readAsArrayBuffer(file);
   };
 
   const handleRowDoubleClick = (worker) => {
+    console.log('Row double-clicked:', worker);
     setSelectedWorker(worker);
     setShowModal(true);
   };
@@ -111,9 +136,13 @@ const Workers = () => {
   };
 
   const handleClearData = () => {
+    console.log('Clearing all data');
     setWorkers([]);
     localStorage.removeItem(LOCAL_STORAGE_KEY);
   };
+
+  // Log workers for debugging
+  console.log('Workers state:', workers);
 
   return (
     <div className="workers-container">

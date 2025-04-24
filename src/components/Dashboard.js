@@ -11,6 +11,12 @@ const Dashboard = () => {
   const [successMessage, setSuccessMessage] = useState('');  // New state for success message
   const [isNewScheduleGenerated, setIsNewScheduleGenerated] = useState(false);  // State for tracking new schedule
   const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const [datesOfWeek, setDatesOfWeek] = useState({});
+  const [showSearch, setShowSearch] = useState(false);
+  const [weekEndingDate, setWeekEndingDate] = useState('');
+  const [unassignedStations, setUnassignedStations] = useState([]);
+  const workersData = JSON.parse(localStorage.getItem('uploadedWorkers')) || []; 
+  const uniqueWorkers = [...new Set(workersData.map(worker => worker.name))];
 
   useEffect(() => {
     const saved = localStorage.getItem('workerSchedule');
@@ -18,6 +24,18 @@ const Dashboard = () => {
       const parsed = JSON.parse(saved);
       setSchedule(parsed);
       assignStationColors(parsed);
+  
+      // Extract datesOfWeek from parsed schedule
+      const newDatesOfWeek = {};
+      Object.keys(parsed).forEach((worker) => {
+        daysOfWeek.forEach((day) => {
+          const entry = parsed[worker][day];
+          if (entry?.date && !newDatesOfWeek[day]) {
+            newDatesOfWeek[day] = entry.date;
+          }
+        });
+      });
+      setDatesOfWeek(newDatesOfWeek);
     } else {
       const allocatedSchedule = allocateWorkers();
       const formattedSchedule = formatSchedule(allocatedSchedule);
@@ -25,6 +43,7 @@ const Dashboard = () => {
       assignStationColors(formattedSchedule);
     }
   }, []);
+  
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
@@ -32,22 +51,25 @@ const Dashboard = () => {
 
   const formatSchedule = (allocatedSchedule) => {
     const formattedSchedule = {};
-
+  
+    // Step 1: Fill in assigned workers
     allocatedSchedule.forEach((station) => {
       if (station.allocatedTo && station.allocatedTo !== 'Unassigned') {
         const worker = station.allocatedTo;
-
+  
         if (!formattedSchedule[worker]) {
           formattedSchedule[worker] = {};
         }
-
+  
         formattedSchedule[worker][station.day] = {
           location: station.location,
           time: station.time,
+          date: station.date,
         };
       }
     });
-
+  
+    // Step 2: Fill in unassigned days for workers who were assigned
     Object.keys(formattedSchedule).forEach((worker) => {
       daysOfWeek.forEach((day) => {
         if (!formattedSchedule[worker][day]) {
@@ -58,9 +80,29 @@ const Dashboard = () => {
         }
       });
     });
-
+  
+    // Step 3: Ensure all uploaded workers are included
+    const workersData = JSON.parse(localStorage.getItem('uploadedWorkers')) || [];
+    const workers = JSON.parse(JSON.stringify(workersData));
+  
+    workers.forEach((worker) => {
+      const workerName = worker.name;
+  
+      if (!formattedSchedule[workerName]) {
+        formattedSchedule[workerName] = {};
+  
+        daysOfWeek.forEach((day) => {
+          formattedSchedule[workerName][day] = {
+            location: 'Unassigned',
+            time: '',
+          };
+        });
+      }
+    });
+  
     return formattedSchedule;
   };
+  
 
   const assignStationColors = (formattedSchedule) => {
     const uniqueStations = new Set();
@@ -151,14 +193,112 @@ const Dashboard = () => {
 
   const downloadDashboardAsPDF = () => {
     const dashboard = document.querySelector('.dashboard-container');
-    
-    html2canvas(dashboard).then((canvas) => {
+  
+    // Temporarily expand dashboard if needed
+    const originalOverflow = dashboard.style.overflow;
+    dashboard.style.overflow = 'visible';
+  
+    html2canvas(dashboard, {
+      scale: 2, // Higher quality
+      useCORS: true,
+      scrollY: -window.scrollY, // Fix position shift
+    }).then((canvas) => {
       const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF();
-      pdf.addImage(imgData, 'PNG', 10, 10, 180, 160);
+      const pdf = new jsPDF('portrait', 'mm', 'a4');
+  
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+  
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+  
+      const pageHeightInPx = (canvas.width * pageHeight) / pageWidth;
+      let remainingHeight = canvas.height;
+      let position = 0;
+  
+      let pageCount = 0;
+  
+      while (remainingHeight > 0) {
+        const pageCanvas = document.createElement('canvas');
+        pageCanvas.width = canvas.width;
+        pageCanvas.height = Math.min(pageHeightInPx, remainingHeight);
+  
+        const ctx = pageCanvas.getContext('2d');
+        ctx.drawImage(
+          canvas,
+          0,
+          position,
+          canvas.width,
+          pageCanvas.height,
+          0,
+          0,
+          canvas.width,
+          pageCanvas.height
+        );
+  
+        const pageImgData = pageCanvas.toDataURL('image/png');
+        if (pageCount > 0) pdf.addPage();
+        const imgHeightOnPDF = (pageCanvas.height * imgWidth) / pageCanvas.width;
+        pdf.addImage(pageImgData, 'PNG', 0, 0, imgWidth, imgHeightOnPDF);
+  
+        position += pageCanvas.height;
+        remainingHeight -= pageCanvas.height;
+        pageCount++;
+      }
+  
       pdf.save('dashboard.pdf');
+      dashboard.style.overflow = originalOverflow; // Restore styles
     });
   };
+  
+  const handleUnassignedChange = (index, field, value) => {
+    setUnassignedStations((prev) => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      return updated;
+    });
+  };
+  
+  const assignUnassignedStation = (index) => {
+    const station = unassignedStations[index];
+    const worker = station.assignedWorker?.trim();
+  
+    if (!worker) {
+      alert('Please enter a valid worker name.');
+      return;
+    }
+  
+    // Check if the worker exists
+    const workersData = JSON.parse(localStorage.getItem('uploadedWorkers')) || [];
+    const workerExists = workersData.some((w) => w.name.toLowerCase() === worker.toLowerCase());
+  
+    if (!workerExists) {
+      alert(`⚠️ Worker "${worker}" does not exist. Please enter a valid worker name.`);
+      return;
+    }
+  
+    setSchedule((prevSchedule) => {
+      const updatedSchedule = { ...prevSchedule };
+  
+      if (!updatedSchedule[worker]) {
+        updatedSchedule[worker] = {};
+      }
+  
+      updatedSchedule[worker][station.day] = {
+        location: station.location,
+        time: station.time,
+        date: station.date || '',
+      };
+  
+      return updatedSchedule;
+    });
+  
+    setUnassignedStations((prev) => prev.filter((_, i) => i !== index));
+  
+    handleSave(); // Save after assigning
+  };
+  
+  
 
   const handleChange = (worker, day, field, value) => {
     setSchedule((prevSchedule) => {
@@ -190,6 +330,24 @@ const Dashboard = () => {
     setSchedule(formattedSchedule); // Set new schedule
     assignStationColors(formattedSchedule); // Assign new station colors
     setIsNewScheduleGenerated(true); // Track that a new schedule has been generated
+
+// NEW: Filter unassigned stations and set them
+const unassigned = allocatedSchedule.filter(
+  (station) => station.allocatedTo === 'Unassigned'
+);
+setUnassignedStations(unassigned);
+
+    const parsed = JSON.parse(JSON.stringify(formattedSchedule));
+    const newDatesOfWeek = {};
+      Object.keys(parsed).forEach((worker) => {
+        daysOfWeek.forEach((day) => {
+          const entry = parsed[worker][day];
+          if (entry?.date && !newDatesOfWeek[day]) {
+            newDatesOfWeek[day] = entry.date;
+          }
+        });
+      });
+      setDatesOfWeek(newDatesOfWeek);
   };
 
   return (
@@ -213,6 +371,26 @@ const Dashboard = () => {
       <button className="generate-schedule-button" onClick={generateNewSchedule}>
         Generate New Schedule
       </button>
+      <div className="search-container">
+  {!showSearch ? (
+    <button className="search-schedule-button" onClick={() => setShowSearch(true)}>
+      Search
+    </button>
+  ) : (
+    <div className="search-form">
+      <input
+        type="date"
+        value={weekEndingDate}
+        onChange={(e) => setWeekEndingDate(e.target.value)}
+        className="date-input"
+      />
+      <button className="go-button">
+        Go
+      </button>
+    </div>
+  )}
+</div>
+
       </div>
       {/* Success message notification */}
       {successMessage && (
@@ -227,8 +405,12 @@ const Dashboard = () => {
             <tr>
               <th>Worker</th>
               {daysOfWeek.map((day) => (
-                <th key={day}>{day}</th>
-              ))}
+  <th key={day}>
+    {day} <br />
+    {datesOfWeek[day] ?? '—'}
+  </th>
+))}
+
               <th>Hours Worked (72hr)</th>
             </tr>
           </thead>
@@ -270,6 +452,56 @@ const Dashboard = () => {
           </tbody>
         </table>
       </div>
+      {unassignedStations.length > 0 && (
+  <div className="unassigned-section">
+    <h2>🛠️ Unassigned Stations</h2>
+    <table className="unassigned-table">
+      <thead>
+        <tr>
+          <th>Day</th>
+          <th>Location</th>
+          <th>Time</th>
+          <th>Assign to Worker</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {unassignedStations.map((station, index) => (
+          <tr key={index}>
+            <td>{station.day}</td>
+            <td>
+              <input
+                type="text"
+                value={station.location}
+                onChange={(e) => handleUnassignedChange(index, 'location', e.target.value)}
+              />
+            </td>
+            <td>
+              <input
+                type="text"
+                value={station.time}
+                onChange={(e) => handleUnassignedChange(index, 'time', e.target.value)}
+              />
+            </td>
+            <td>
+              <input
+                type="text"
+                placeholder="Worker name"
+                value={station.assignedWorker || ''}
+                onChange={(e) => handleUnassignedChange(index, 'assignedWorker', e.target.value)}
+              />
+            </td>
+            <td>
+              <button onClick={() => assignUnassignedStation(index)}>Assign</button>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+)}
+
+
     </div>
   );
 };

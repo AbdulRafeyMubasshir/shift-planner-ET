@@ -5,6 +5,8 @@ import Workers from './components/Workers';
 import Stations from './components/Stations';
 import Register from './components/Register';
 import Login from './components/Login';
+import RegisterOrganization from './components/RegisterOrganization';
+import RegisterUser from './components/RegisterUser';
 import ProtectedRoute from './components/ProtectedRoute'; // ProtectedRoute component to protect routes
 import supabase from './supabaseClient'; // Supabase client
 
@@ -49,7 +51,9 @@ function App() {
         <Routes>
           {/* Routes for Registration and Login */}
           <Route path="/login" element={<Login />} />
-          <Route path="/register1475" element={<Register />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/registerorganization" element={<RegisterOrganization />} />
+          <Route path="/registeruser" element={<RegisterUser />} />
 
           {/* Protected Routes */}
           <Route

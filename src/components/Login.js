@@ -62,11 +62,11 @@ const Login = () => {
         {error && <p className="error-message">{error}</p>}
         <button type="submit">Login</button>
       </form>
-    {/*}
+    
       <div className="register-link">
         <p>Don't have an account? <a href="/register">Register here</a></p>
       </div>
-      */}
+      
       {/* Scroll reference to scroll to the bottom */}
       <div ref={bottomRef} />
     </div>

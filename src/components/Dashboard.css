@@ -3,7 +3,7 @@
 .dashboard-container {
   width: 90%;
   margin: 20px auto;
-  margin-top: 1275px;
+  margin-top: 5600px;
   padding: 20px;
   background-color: #fff;
   border-radius: 8px;
@@ -192,4 +192,48 @@ button:active {
   .export-button {
     padding: 8px 16px;
   }
+}
+.unassigned-section {
+  margin-top: 40px;
+  padding: 20px;
+  background-color: #fffbea;
+  border: 1px solid #ffeeba;
+  border-radius: 8px;
+}
+
+.unassigned-section h2 {
+  margin-bottom: 15px;
+  color: #856404;
+}
+
+.unassigned-table {
+  width: 100%;
+  border-collapse: collapse;
+  background-color: #fff;
+}
+
+.unassigned-table th,
+.unassigned-table td {
+  border: 1px solid #ccc;
+  padding: 10px;
+  text-align: left;
+}
+
+.unassigned-table input[type="text"] {
+  width: 100%;
+  padding: 6px;
+  box-sizing: border-box;
+}
+
+.unassigned-table button {
+  padding: 6px 12px;
+  background-color: #4caf50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.unassigned-table button:hover {
+  background-color: #45a049;
 }
