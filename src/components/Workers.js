@@ -1,92 +1,63 @@
 import React, { useState, useEffect } from 'react';
-import * as XLSX from 'xlsx';
-import './Workers.css'; // Importing the CSS for styling
-
-const LOCAL_STORAGE_KEY = 'uploadedWorkers';
+import './Workers.css';
+import supabase from '../supabaseClient';
 
 const Workers = () => {
   const [workers, setWorkers] = useState([]);
   const [selectedWorker, setSelectedWorker] = useState(null);
   const [showModal, setShowModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [workerToDelete, setWorkerToDelete] = useState(null);
+  const [organizationId, setOrganizationId] = useState(null);
 
-  // Separate state for editable text inputs
-  const [availabilityInput, setAvailabilityInput] = useState('');
-  const [canWorkStationsInput, setCanWorkStationsInput] = useState('');
-  const [cannotWorkStationsInput, setCannotWorkStationsInput] = useState('');
-
-  // Load saved data from localStorage on mount
+  // Fetch organization_id of logged-in user
   useEffect(() => {
-    const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (saved) {
-      console.log('Loaded saved workers from localStorage:', saved);
-      setWorkers(JSON.parse(saved));
-    }
+    const fetchOrganizationId = async () => {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session?.user) {
+        console.error("User not logged in");
+        return;
+      }
+
+      const userId = session.user.id;
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('organization_id')
+        .eq('id', userId)
+        .single();
+
+      if (profileError || !profile) {
+        console.error("Could not fetch user profile or organization");
+        return;
+      }
+
+      setOrganizationId(profile.organization_id);
+    };
+
+    fetchOrganizationId();
   }, []);
 
-  // Sync input fields when modal opens
+  // Fetch workers for this organization
   useEffect(() => {
-    if (selectedWorker) {
-      setAvailabilityInput(selectedWorker.availability.join(', '));
-      setCanWorkStationsInput(selectedWorker.canWorkStations.join(', '));
-      setCannotWorkStationsInput(selectedWorker.cannotWorkStations.join(', '));
-    }
-  }, [selectedWorker]);
+    const fetchWorkers = async () => {
+      if (!organizationId) return;
 
-  const handleFileUpload = (event) => {
-    const file = event.target.files?.[0];
-    if (!file) {
-      console.log('No file selected');
-      return;
-    }
+      const { data, error } = await supabase
+        .from('workers')
+        .select('*')
+        .eq('organization_id', organizationId);
 
-    console.log('Selected file:', file.name);
-
-    const reader = new FileReader();
-
-    reader.onload = (e) => {
-      const data = new Uint8Array(e.target.result);
-      console.log('Raw file data:', data);
-
-      try {
-        const workbook = XLSX.read(data, { type: 'array' });
-        console.log('Workbook:', workbook);
-
-        const sheetName = workbook.SheetNames[0];
-        console.log('Sheet name:', sheetName);
-
-        const worksheet = workbook.Sheets[sheetName];
-        console.log('Worksheet:', worksheet);
-
-        const jsonData = XLSX.utils.sheet_to_json(worksheet);
-        console.log('Parsed JSON data:', jsonData);
-
-        const formattedData = jsonData.map((row, index) => ({
-          id: index,
-          name: row['Name'] || '',
-          availability: row['Availability'] ? row['Availability'].split(', ') : [],
-          preferredShift: row['Preferred Shift'] || '',
-          canWorkStations: row['Can Work Stations'] ? row['Can Work Stations'].split(', ') : [],
-          cannotWorkStations: row['Cannot Work Stations'] ? row['Cannot Work Stations'].split(', ') : [],
-        }));
-
-        console.log('Formatted worker data:', formattedData);
-
-        setWorkers(formattedData);
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(formattedData));
-      } catch (err) {
-        console.error('Error parsing Excel file:', err);
+      if (error) {
+        console.error('Error fetching workers:', error);
+      } else {
+        setWorkers(data);
       }
     };
 
-    reader.onerror = (error) => {
-      console.error('Error reading file:', error);
-    };
-
-    reader.readAsArrayBuffer(file);
-  };
+    fetchWorkers();
+  }, [organizationId]);
 
   const handleRowDoubleClick = (worker) => {
-    console.log('Row double-clicked:', worker);
     setSelectedWorker(worker);
     setShowModal(true);
   };
@@ -94,40 +65,71 @@ const Workers = () => {
   const handleModalInputChange = (field, value) => {
     setSelectedWorker((prev) => ({
       ...prev,
-      [field]: value,
+      [field]: field === 'canworkstations'
+        ? value.split(',').map((s) => s.trim())
+        : value,
     }));
   };
 
-  const handleSaveModal = () => {
-    const cleanedAvailability = availabilityInput
-      .split(',')
-      .map((day) => day.trim())
-      .filter(Boolean);
+  const handleSaveModal = async () => {
+    if (selectedWorker.id) {
+      // Update worker
+      const { data, error } = await supabase
+        .from('workers')
+        .update({
+          name: selectedWorker.name,
+          canworkstations: selectedWorker.canworkstations,
+          monday: selectedWorker.monday,
+          tuesday: selectedWorker.tuesday,
+          wednesday: selectedWorker.wednesday,
+          thursday: selectedWorker.thursday,
+          friday: selectedWorker.friday,
+          saturday: selectedWorker.saturday,
+          sunday: selectedWorker.sunday,
+        })
+        .eq('id', selectedWorker.id)
+        .select();
 
-    const cleanedCanWorkStations = canWorkStationsInput
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
+      if (error) {
+        console.error('Error updating worker:', error);
+      } else {
+        setWorkers((prevWorkers) =>
+          prevWorkers.map((worker) =>
+            worker.id === selectedWorker.id ? data[0] : worker
+          )
+        );
+      }
+    } else {
+      // Insert new worker
+      const { data, error } = await supabase
+        .from('workers')
+        .insert([{ ...selectedWorker, organization_id: organizationId }])
+        .select();
 
-    const cleanedCannotWorkStations = cannotWorkStationsInput
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
+      if (error) {
+        console.error('Error saving new worker:', error);
+      } else {
+        setWorkers((prevWorkers) => [...prevWorkers, data[0]]);
+      }
+    }
 
-    const updatedWorker = {
-      ...selectedWorker,
-      availability: cleanedAvailability,
-      canWorkStations: cleanedCanWorkStations,
-      cannotWorkStations: cleanedCannotWorkStations,
-    };
-
-    const updatedWorkers = workers.map((worker) =>
-      worker.id === selectedWorker.id ? updatedWorker : worker
-    );
-
-    setWorkers(updatedWorkers);
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedWorkers));
     setShowModal(false);
+    setSelectedWorker(null);
+  };
+
+  const handleDeleteWorker = async () => {
+    const { error } = await supabase
+      .from('workers')
+      .delete()
+      .eq('id', workerToDelete.id);
+
+    if (error) {
+      console.error('Error deleting worker:', error);
+    } else {
+      setWorkers((prev) => prev.filter((w) => w.id !== workerToDelete.id));
+      setShowDeleteConfirm(false);
+      setWorkerToDelete(null);
+    }
   };
 
   const handleCloseModal = () => {
@@ -135,31 +137,40 @@ const Workers = () => {
     setSelectedWorker(null);
   };
 
-  const handleClearData = () => {
-    console.log('Clearing all data');
-    setWorkers([]);
-    localStorage.removeItem(LOCAL_STORAGE_KEY);
+  const handleAddWorker = () => {
+    setSelectedWorker({
+      name: '',
+      canworkstations: [],
+      monday: '',
+      tuesday: '',
+      wednesday: '',
+      thursday: '',
+      friday: '',
+      saturday: '',
+      sunday: '',
+    });
+    setShowModal(true);
   };
 
-  // Log workers for debugging
-  console.log('Workers state:', workers);
+  const handleOpenDeleteConfirm = (worker) => {
+    setWorkerToDelete(worker);
+    setShowDeleteConfirm(true);
+  };
+
+  const handleCloseDeleteConfirm = () => {
+    setShowDeleteConfirm(false);
+    setWorkerToDelete(null);
+  };
 
   return (
     <div className="workers-container">
       <h1>Workers</h1>
 
-      <input
-        type="file"
-        accept=".xlsx, .xls"
-        onChange={handleFileUpload}
-        className="mb-4"
-      />
-
       <button
-        onClick={handleClearData}
-        className="mb-4 px-4 py-2 bg-red-500 text-white rounded"
+        onClick={handleAddWorker}
+        className="mb-4 px-4 py-2 bg-green-500 text-white rounded"
       >
-        Clear Data
+        Add New Worker
       </button>
 
       {workers.length === 0 && <p>No data loaded</p>}
@@ -168,10 +179,15 @@ const Workers = () => {
         <thead>
           <tr>
             <th>Name</th>
-            <th>Availability</th>
-            <th>Preferred Shift</th>
+            <th>Monday</th>
+            <th>Tuesday</th>
+            <th>Wednesday</th>
+            <th>Thursday</th>
+            <th>Friday</th>
+            <th>Saturday</th>
+            <th>Sunday</th>
             <th>Can Work Stations</th>
-            <th>Cannot Work Stations</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -182,19 +198,59 @@ const Workers = () => {
               className="clickable-row"
             >
               <td>{worker.name}</td>
-              <td>{worker.availability.join(', ')}</td>
-              <td>{worker.preferredShift}</td>
-              <td>{worker.canWorkStations.join(', ')}</td>
-              <td>{worker.cannotWorkStations.join(', ')}</td>
+              <td>{worker.monday}</td>
+              <td>{worker.tuesday}</td>
+              <td>{worker.wednesday}</td>
+              <td>{worker.thursday}</td>
+              <td>{worker.friday}</td>
+              <td>{worker.saturday}</td>
+              <td>{worker.sunday}</td>
+              <td>{worker.canworkstations?.join(', ')}</td>
+              <td>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleOpenDeleteConfirm(worker);
+                  }}
+                  className="bg-red-500 text-white px-2 py-1 rounded"
+                >
+                  Delete
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
 
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h2>Are you sure you want to delete this worker?</h2>
+            <p>{workerToDelete?.name}</p>
+            <div className="modal-buttons">
+              <button
+                onClick={handleDeleteWorker}
+                className="bg-red-500 text-white px-4 py-2 rounded"
+              >
+                Yes, Delete
+              </button>
+              <button
+                onClick={handleCloseDeleteConfirm}
+                className="bg-gray-500 text-white px-4 py-2 rounded"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit/Add Modal */}
       {showModal && selectedWorker && (
         <div className="modal-overlay">
           <div className="modal-content">
-            <h2>Edit Worker</h2>
+            <h2>{selectedWorker.id ? 'Edit Worker' : 'Add New Worker'}</h2>
             <label>
               Name:
               <input
@@ -203,41 +259,27 @@ const Workers = () => {
                 onChange={(e) => handleModalInputChange('name', e.target.value)}
               />
             </label>
-            <label>
-              Availability:
-              <input
-                type="text"
-                value={availabilityInput}
-                onChange={(e) => setAvailabilityInput(e.target.value)}
-              />
-            </label>
-            <label>
-              Preferred Shift:
-              <input
-                type="text"
-                value={selectedWorker.preferredShift}
-                onChange={(e) => handleModalInputChange('preferredShift', e.target.value)}
-              />
-            </label>
+            {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((day) => (
+              <label key={day}>
+                {day.charAt(0).toUpperCase() + day.slice(1)}:
+                <input
+                  type="text"
+                  value={selectedWorker[day] || ''}
+                  onChange={(e) => handleModalInputChange(day, e.target.value)}
+                />
+              </label>
+            ))}
             <label>
               Can Work Stations:
               <input
                 type="text"
-                value={canWorkStationsInput}
-                onChange={(e) => setCanWorkStationsInput(e.target.value)}
+                value={selectedWorker.canworkstations.join(', ')}
+                onChange={(e) => handleModalInputChange('canworkstations', e.target.value)}
               />
             </label>
-            <label>
-              Cannot Work Stations:
-              <input
-                type="text"
-                value={cannotWorkStationsInput}
-                onChange={(e) => setCannotWorkStationsInput(e.target.value)}
-              />
-            </label>
-            <div>
-              <button onClick={handleSaveModal}>Save</button>
-              <button onClick={handleCloseModal}>Cancel</button>
+            <div className="modal-buttons">
+              <button onClick={handleSaveModal} className="bg-blue-500 text-white px-4 py-2 rounded">Save</button>
+              <button onClick={handleCloseModal} className="bg-gray-500 text-white px-4 py-2 rounded">Cancel</button>
             </div>
           </div>
         </div>

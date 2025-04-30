@@ -4,6 +4,7 @@ import allocateWorkers from '../services/scheduler';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import './Dashboard.css';
+import supabase from '../supabaseClient';
 
 const Dashboard = () => {
   const [schedule, setSchedule] = useState({});
@@ -17,6 +18,10 @@ const Dashboard = () => {
   const [unassignedStations, setUnassignedStations] = useState([]);
   const workersData = JSON.parse(localStorage.getItem('uploadedWorkers')) || []; 
   const uniqueWorkers = [...new Set(workersData.map(worker => worker.name))];
+  const [auditLogBuffer, setAuditLogBuffer] = useState([]);
+  const [auditEntries, setAuditEntries] = useState([]);
+  const [showAuditModal, setShowAuditModal] = useState(false);
+  const [focusedFieldValue, setFocusedFieldValue] = useState(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('workerSchedule');
@@ -49,7 +54,7 @@ const Dashboard = () => {
   }, []);
 
 
-  const formatSchedule = (allocatedSchedule) => {
+  const formatSchedule = async (allocatedSchedule) => {
     const formattedSchedule = {};
   
     // Step 1: Fill in assigned workers
@@ -81,9 +86,55 @@ const Dashboard = () => {
       });
     });
   
-    // Step 3: Ensure all uploaded workers are included
-    const workersData = JSON.parse(localStorage.getItem('uploadedWorkers')) || [];
-    const workers = JSON.parse(JSON.stringify(workersData));
+    // ✅ Step 3: Ensure all uploaded workers are included from Supabase
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session?.user) {
+      throw new Error("User not logged in");
+    }
+  
+    const userId = session.user.id;
+  
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('organization_id')
+      .eq('id', userId)
+      .single();
+  
+    if (profileError || !profile) {
+      throw new Error("Could not fetch user profile");
+    }
+  
+    const organizationId = profile.organization_id;
+  
+    const { data: workersData, error: workerError } = await supabase
+      .from('workers')
+      .select('name')
+      .eq('organization_id', organizationId);
+  
+    if (workerError) {
+      throw new Error("Could not fetch workers");
+    }
+    // Step 2: Fetch unique dates from the stations table for the organization
+    const { data: stations, error: stationsError } = await supabase
+    .from('stations')
+    .select('date', { distinct: true })
+
+if (stationsError) {
+  throw new Error("Could not fetch stations data");
+}
+
+// Step 3: Map the unique dates to the corresponding days of the week
+const uniqueDates = [...new Set(stations.map(row => row.date))];
+const newDatesOfWeek = {};
+daysOfWeek.forEach((day, index) => {
+  const date = uniqueDates[index];
+  if (date) {
+    newDatesOfWeek[day] = date;
+  }
+});
+
+setDatesOfWeek(newDatesOfWeek);
+    const workers = JSON.parse(JSON.stringify(workersData)); // Keep consistent with original code
   
     workers.forEach((worker) => {
       const workerName = worker.name;
@@ -95,6 +146,7 @@ const Dashboard = () => {
           formattedSchedule[workerName][day] = {
             location: 'Unassigned',
             time: '',
+            date: newDatesOfWeek[day] || '',
           };
         });
       }
@@ -102,6 +154,7 @@ const Dashboard = () => {
   
     return formattedSchedule;
   };
+  
   
 
   const assignStationColors = (formattedSchedule) => {
@@ -259,7 +312,7 @@ const Dashboard = () => {
     });
   };
   
-  const assignUnassignedStation = (index) => {
+  const assignUnassignedStation = async (index) => {
     const station = unassignedStations[index];
     const worker = station.assignedWorker?.trim();
   
@@ -269,13 +322,49 @@ const Dashboard = () => {
     }
   
     // Check if the worker exists
-    const workersData = JSON.parse(localStorage.getItem('uploadedWorkers')) || [];
-    const workerExists = workersData.some((w) => w.name.toLowerCase() === worker.toLowerCase());
-  
-    if (!workerExists) {
-      alert(`⚠️ Worker "${worker}" does not exist. Please enter a valid worker name.`);
-      return;
-    }
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+if (sessionError || !session?.user) {
+  throw new Error("User not logged in");
+}
+
+const userId = session.user.id;
+
+// Get organization ID from profile
+const { data: profile, error: profileError } = await supabase
+  .from('profiles')
+  .select('organization_id, user_name')
+  .eq('id', userId)
+  .single();
+
+if (profileError || !profile) {
+  throw new Error("Could not fetch user profile");
+}
+
+const organizationId = profile.organization_id;
+const userName = profile.user_name;
+// Fetch worker names from database for the org
+const { data: workersData, error: workerError } = await supabase
+  .from('workers')
+  .select('name')
+  .eq('organization_id', organizationId);
+
+if (workerError || !workersData) {
+  throw new Error("Error fetching workers from database");
+}
+
+// Validate worker existence (case-insensitive)
+const workerExists = workersData.some(
+  (w) => w.name.toLowerCase() === worker.toLowerCase()
+);
+
+if (!workerExists) {
+  alert(`⚠️ Worker "${worker}" does not exist. Please enter a valid worker name.`);
+  return;
+}
+// Capture current values before update
+const oldAssignment = schedule[worker]?.[station.day] || {};
+const oldLocation = oldAssignment.location || null;
+const oldTime = oldAssignment.time || null;
   
     setSchedule((prevSchedule) => {
       const updatedSchedule = { ...prevSchedule };
@@ -296,37 +385,177 @@ const Dashboard = () => {
     setUnassignedStations((prev) => prev.filter((_, i) => i !== index));
   
     handleSave(); // Save after assigning
+    const { error: auditError } = await supabase
+    .from('schedule_audit')
+    .insert([{
+      organization_id: organizationId,
+      worker_name: worker,
+      day_of_week: station.day,
+      old_location: oldLocation,
+      new_location: station.location,
+      old_time: oldTime,
+      new_time: station.time,
+      changed_by: userName,
+      week_ending: weekEndingDate,
+    }]);
+
+  if (auditError) {
+    console.error('Failed to insert audit log:', auditError.message);
+  }
   };
   
   
 
-  const handleChange = (worker, day, field, value) => {
+  const handleChange = (worker, day, field, newValue) => {
+    const prevValue = schedule[worker][day][field];
+  
+    // Ignore if no real change
+    if (prevValue === newValue) return;
+  
+    // Use the value from onFocus as the true "original" value
+    const originalValue =
+      focusedFieldValue &&
+      focusedFieldValue.worker === worker &&
+      focusedFieldValue.day === day &&
+      focusedFieldValue.field === field
+        ? focusedFieldValue.value
+        : prevValue;
+  
+    setAuditLogBuffer((prevLog) => {
+      const existingIndex = prevLog.findIndex(
+        (entry) =>
+          entry.worker_name === worker &&
+          entry.day_of_week === day &&
+          entry.field === field
+      );
+  
+      const updatedEntry = {
+        worker_name: worker,
+        day_of_week: day,
+        field,
+        old_value: originalValue,
+        new_value: newValue,
+      };
+  
+      if (existingIndex !== -1) {
+        const newLog = [...prevLog];
+        newLog[existingIndex] = updatedEntry;
+        return newLog;
+      }
+  
+      return [...prevLog, updatedEntry];
+    });
+  
+    // Apply the change
     setSchedule((prevSchedule) => {
-      const updatedSchedule = { ...prevSchedule };
-      updatedSchedule[worker][day][field] = value;
-      return updatedSchedule;
+      const updated = { ...prevSchedule };
+      updated[worker][day][field] = newValue;
+      return updated;
     });
   };
+  
+  
 
-  const handleSave = () => {
-    localStorage.setItem('workerSchedule', JSON.stringify(schedule));
-
-    // Show the success message for 3 seconds
-    setSuccessMessage('Schedule saved successfully!');
-    
-    setTimeout(() => {
-      setSuccessMessage('');  // Hide the success message after 3 seconds
-    }, 3000);
+  const handleSave = async () => {
+    try {
+      const weekEndingDate = datesOfWeek['Saturday'];
+      if (!weekEndingDate) {
+        alert('Week ending date is missing');
+        return;
+      }
+  
+      await upsertSchedule(schedule, weekEndingDate);
+      await saveAuditLog(weekEndingDate);
+  
+      setSuccessMessage('Schedule saved successfully!');
+      setAuditLogBuffer([]); // Clear the buffer
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to save schedule: ' + err.message);
+    }
   };
+  const saveAuditLog = async (weekEndingDate) => {
+    if (auditLogBuffer.length === 0) return;
+  
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session?.user) return;
+  
+    const userId = session.user.id;
+  
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('organization_id, user_name')
+      .eq('id', userId)
+      .single();
+  
+    if (profileError || !profile) return;
+  
+    const organizationId = profile.organization_id;
+    const userName = profile.user_name;
+  
+    const changesToInsert = auditLogBuffer.map((entry) => {
+      const isLocation = entry.field === 'location';
+      return {
+        organization_id: organizationId,
+        worker_name: entry.worker_name,
+        day_of_week: entry.day_of_week,
+        old_location: isLocation ? entry.old_value : null,
+        new_location: isLocation ? entry.new_value : null,
+        old_time: !isLocation ? entry.old_value : null,
+        new_time: !isLocation ? entry.new_value : null,
+        changed_by: userName,
+        week_ending: weekEndingDate,
+      };
+    });
+  
+    const { error: insertError } = await supabase
+      .from('schedule_audit')
+      .insert(changesToInsert);
+  
+    if (insertError) {
+      console.error('Audit log insert failed:', insertError.message);
+    }
+  };
+    
+  const fetchAuditTrail = async () => {
+    const { data: { session }, error } = await supabase.auth.getSession();
+    if (error || !session?.user) return;
+  
+    const userId = session.user.id;
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('organization_id')
+      .eq('id', userId)
+      .single();
+  
+    if (profileError || !profile) return;
+  
+    const organizationId = profile.organization_id;
+    const weekEnding = datesOfWeek['Saturday'];
+  
+    const { data, error: fetchError } = await supabase
+      .from('schedule_audit')
+      .select('*')
+      .eq('organization_id', organizationId)
+      .eq('week_ending', weekEnding)
+      .order('changed_at', { ascending: false });
+  
+    if (!fetchError) {
+      setAuditEntries(data);
+      setShowAuditModal(true);
+    }
+  };
+  
 
   const getStationColor = (stationName) => {
     return stationColors[stationName] || '#f1f1f1';
   };
 
   // New function to generate a new schedule on button click
-  const generateNewSchedule = () => {
-    const allocatedSchedule = allocateWorkers();
-    const formattedSchedule = formatSchedule(allocatedSchedule);
+  const generateNewSchedule = async () => {
+    const allocatedSchedule = await allocateWorkers();
+    const formattedSchedule = await formatSchedule(allocatedSchedule);
     setSchedule(formattedSchedule); // Set new schedule
     assignStationColors(formattedSchedule); // Assign new station colors
     setIsNewScheduleGenerated(true); // Track that a new schedule has been generated
@@ -336,19 +565,145 @@ const unassigned = allocatedSchedule.filter(
   (station) => station.allocatedTo === 'Unassigned'
 );
 setUnassignedStations(unassigned);
-
-    const parsed = JSON.parse(JSON.stringify(formattedSchedule));
-    const newDatesOfWeek = {};
-      Object.keys(parsed).forEach((worker) => {
-        daysOfWeek.forEach((day) => {
-          const entry = parsed[worker][day];
-          if (entry?.date && !newDatesOfWeek[day]) {
-            newDatesOfWeek[day] = entry.date;
-          }
-        });
-      });
-      setDatesOfWeek(newDatesOfWeek);
   };
+
+
+  const upsertSchedule = async (schedule, weekEndingDate) => {
+  
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  
+  
+    if (sessionError || !session?.user) {
+      throw new Error("User not logged in");
+    }
+  
+    const userId = session.user.id;
+  
+    // Get organization_id from user's profile
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('organization_id')
+      .eq('id', userId)
+      .single();
+  
+  
+    if (profileError || !profile) {
+      throw new Error("Could not fetch user profile or organization");
+    }
+  
+    const organizationId = profile.organization_id;
+  
+    // Flatten schedule
+    const entries = [];
+  
+    Object.entries(schedule).forEach(([worker, days]) => {
+      Object.entries(days).forEach(([day, entry]) => {
+        const entryObject = {
+          organization_id: organizationId,
+          worker_name: worker,
+          day_of_week: day,
+          location: entry.location || 'Unassigned',
+          time: entry.time || '',
+          date: entry.date || null,
+          week_ending: weekEndingDate,
+        };
+        entries.push(entryObject);
+      });
+    });
+  
+  
+    // Upsert into schedule_entries table
+    const { error: upsertError } = await supabase
+      .from('schedule_entries')
+      .upsert(entries, {
+        onConflict: 'organization_id,worker_name,day_of_week,week_ending',
+      });
+  
+  
+    if (upsertError) {
+      throw new Error('Upsert failed: ' + upsertError.message);
+    }
+  
+  
+    return true;
+  };
+  
+
+  const fetchSchedule = async (weekEndingDate) => {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  
+  
+    if (sessionError || !session?.user) {
+      throw new Error("User not logged in");
+    }
+  
+    const userId = session.user.id;
+  
+    // Get user's organization ID
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('organization_id')
+      .eq('id', userId)
+      .single();
+  
+    if (profileError || !profile) {
+      console.error('Error fetching profile:', profileError);
+      return null;
+    }
+  
+    const organizationId = profile.organization_id;
+  
+    // Fetch schedule rows
+    const { data: rows, error: fetchError } = await supabase
+      .from('schedule_entries')
+      .select('*')
+      .eq('organization_id', organizationId)
+      .eq('week_ending', weekEndingDate);
+  
+    if (fetchError) {
+      console.error('Error fetching schedule:', fetchError);
+      return null;
+    }
+  
+    // Convert flat rows back to nested structure
+    const schedule = {};
+    const datesOfWeek = {};
+  
+    for (const row of rows) {
+      const { worker_name, day_of_week, location, time, date } = row;
+  
+      if (!schedule[worker_name]) {
+        schedule[worker_name] = {};
+      }
+  
+      schedule[worker_name][day_of_week] = {
+        location,
+        time,
+        date,
+      };
+  
+      if (!datesOfWeek[day_of_week]) {
+        datesOfWeek[day_of_week] = date;
+      }
+    }
+  
+    // Fill in unassigned days for each worker
+    Object.keys(schedule).forEach((worker) => {
+      daysOfWeek.forEach((day) => {
+        if (!schedule[worker][day]) {
+          schedule[worker][day] = {
+            location: 'Unassigned',
+            time: '',
+          };
+        }
+      });
+    });
+  
+    return { schedule, datesOfWeek };
+  };
+
+
+
 
   return (
     <div className="dashboard-container">
@@ -371,25 +726,84 @@ setUnassignedStations(unassigned);
       <button className="generate-schedule-button" onClick={generateNewSchedule}>
         Generate New Schedule
       </button>
+      <button onClick={fetchAuditTrail}>View Audit Trail</button>
+
+      {showAuditModal && (
+  <div className="audit-modal" onClick={() => setShowAuditModal(false)}>
+    <div className="audit-modal-content" onClick={(e) => e.stopPropagation()}>
+      <h3>Audit Trail</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Worker</th>
+            <th>Day</th>
+            <th>Old Location</th>
+            <th>New Location</th>
+            <th>Old Time</th>
+            <th>New Time</th>
+            <th>Changed At</th>
+            <th>Changed By</th>
+          </tr>
+        </thead>
+        <tbody>
+          {auditEntries.map((entry, idx) => (
+            <tr key={idx}>
+              <td>{entry.worker_name}</td>
+              <td>{entry.day_of_week}</td>
+              <td>{entry.old_location}</td>
+              <td>{entry.new_location}</td>
+              <td>{entry.old_time}</td>
+              <td>{entry.new_time}</td>
+              <td>{new Date(new Date(entry.changed_at).getTime() + 60 * 60 * 1000).toLocaleString()}</td>
+              <td>{entry.changed_by}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <button onClick={() => setShowAuditModal(false)}>Close</button>
+    </div>
+  </div>
+)}
+
+
       <div className="search-container">
   {!showSearch ? (
     <button className="search-schedule-button" onClick={() => setShowSearch(true)}>
       Search
     </button>
   ) : (
-    <div className="search-form">
+    <form
+      className="search-form"
+      onSubmit={async (e) => {
+        e.preventDefault();
+
+        if (!weekEndingDate) {
+          alert("Please select a date first.");
+          return;
+        }
+
+        const result = await fetchSchedule(weekEndingDate);
+        if (result) {
+          console.log(result.schedule);
+          setSchedule(result.schedule);
+          setDatesOfWeek(result.datesOfWeek);
+          assignStationColors(result.schedule);
+        }
+      }}
+    >
       <input
         type="date"
         value={weekEndingDate}
         onChange={(e) => setWeekEndingDate(e.target.value)}
         className="date-input"
       />
-      <button className="go-button">
+      <button type="submit" className="go-button">
         Go
       </button>
-    </div>
+    </form>
   )}
 </div>
+
 
       </div>
       {/* Success message notification */}
@@ -428,21 +842,39 @@ setUnassignedStations(unassigned);
                       style={{ backgroundColor: stationColor }}
                     >
                       <input
-                        type="text"
-                        value={daySchedule.location !== 'Unassigned' ? daySchedule.location : ''}
-                        onChange={(e) =>
-                          handleChange(worker, day, 'location', e.target.value)
-                        }
-                        placeholder="Location"
-                      />
-                      <input
-                        type="text"
-                        value={daySchedule.time}
-                        onChange={(e) =>
-                          handleChange(worker, day, 'time', e.target.value)
-                        }
-                        placeholder="Time"
-                      />
+  type="text"
+  value={daySchedule.location !== 'Unassigned' ? daySchedule.location : ''}
+  onFocus={() =>
+    setFocusedFieldValue({
+      worker,
+      day,
+      field: 'location',
+      value: daySchedule.location,
+    })
+  }
+  onChange={(e) =>
+    handleChange(worker, day, 'location', e.target.value)
+  }
+  placeholder="Location"
+/>
+
+<input
+  type="text"
+  value={daySchedule.time}
+  onFocus={() =>
+    setFocusedFieldValue({
+      worker,
+      day,
+      field: 'time',
+      value: daySchedule.time,
+    })
+  }
+  onChange={(e) =>
+    handleChange(worker, day, 'time', e.target.value)
+  }
+  placeholder="Time"
+/>
+
                     </td>
                   );
                 })}

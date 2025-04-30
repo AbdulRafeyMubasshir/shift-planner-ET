@@ -1,130 +1,143 @@
-// Helper function to get the shift type based on the station time
+import supabase from '../supabaseClient';
+
 const getShiftType = (time) => {
   const startTime = parseInt(time.split('-')[0]);
-  if (startTime >= 600 && startTime < 1400) {
-    return 'Early';
-  } else if (startTime >= 1400 && startTime < 2200) {
-    return 'Late';
-  } else {
-    return 'Night';
-  }
+  if (startTime >= 600 && startTime < 1400) return 'early';
+  if (startTime >= 1400 && startTime < 2200) return 'late';
+  return 'night';
 };
 
-// Helper: Calculate shift duration in hours from "0800-1800" format
 const getShiftDurationInHours = (time) => {
   const [start, end] = time.split('-').map(t => parseInt(t));
-  const startHour = Math.floor(start / 100);
-  const startMin = start % 100;
-  const endHour = Math.floor(end / 100);
-  const endMin = end % 100;
-
-  const startInMinutes = startHour * 60 + startMin;
-  const endInMinutes = endHour * 60 + endMin;
-
-  let duration = (endInMinutes - startInMinutes) / 60;
-  if (duration < 0) duration += 24; // Handle overnight shifts (e.g. 2200-0600)
-
+  const startMin = Math.floor(start / 100) * 60 + (start % 100);
+  const endMin = Math.floor(end / 100) * 60 + (end % 100);
+  let duration = (endMin - startMin) / 60;
+  if (duration < 0) duration += 24;
   return duration;
 };
 
-// Helper: Get shift end time in minutes from "0800-1800"
-const getShiftEndInMinutes = (time) => {
-  const end = parseInt(time.split('-')[1]);
-  const endHour = Math.floor(end / 100);
-  const endMin = end % 100;
-  return endHour * 60 + endMin;
-};
-
-// Helper: Get shift start time in minutes from "0800-1800"
 const getShiftStartInMinutes = (time) => {
   const start = parseInt(time.split('-')[0]);
-  const startHour = Math.floor(start / 100);
-  const startMin = start % 100;
-  return startHour * 60 + startMin;
+  return Math.floor(start / 100) * 60 + (start % 100);
 };
 
-// Days of the week in order
-const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const getShiftEndInMinutes = (time) => {
+  const end = parseInt(time.split('-')[1]);
+  return Math.floor(end / 100) * 60 + (end % 100);
+};
 
-// Scheduler function
-const allocateWorkers = () => {
-  const workersData = JSON.parse(localStorage.getItem('uploadedWorkers')) || [];
-  const stationsData = JSON.parse(localStorage.getItem('uploadedStations')) || [];
+const daysOfWeek = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
-  const workerAllocations = {};       // { workerId: [day, ...] }
-  const workerShiftHistory = {};      // { workerId: { day: { shiftType, time } } }
-  const workerTotalHours = {};        // { workerId: totalHours }
+const allocateWorkers = async () => {
+  // 🔐 Get session
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || !session?.user) {
+    throw new Error("User not logged in");
+  }
 
-  const workers = JSON.parse(JSON.stringify(workersData));
+  const userId = session.user.id;
 
-  if (workers.length === 0) console.warn('No workers available for allocation.');
-  if (stationsData.length === 0) console.warn('No stations available for allocation.');
+  // 🏢 Get organization_id from profile
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('organization_id')
+    .eq('id', userId)
+    .single();
 
+  if (profileError || !profile) {
+    throw new Error("Could not fetch user profile or organization");
+  }
+
+  const organizationId = profile.organization_id;
+
+  // 👷‍♂️ Fetch workers & stations
+  const { data: workersData, error: workerError } = await supabase
+    .from('workers')
+    .select('*')
+    .eq('organization_id', organizationId);
+
+  const { data: stationsData, error: stationError } = await supabase
+    .from('stations')
+    .select('*')
+    .eq('organization_id', organizationId);
+
+  if (workerError || stationError) {
+    console.error('Error fetching data:', workerError || stationError);
+    return [];
+  }
+
+  // 📊 Setup tracking
+  const workerAllocations = {};
+  const workerShiftHistory = {};
+  const workerTotalHours = {};
+
+  // 🧠 Preprocess workers
+  const workers = workersData.map(worker => ({
+    ...worker,
+    canworkstations: worker.canworkstations || [],
+    availabilityByDay: {
+      monday: worker.monday?.toLowerCase() || null,
+      tuesday: worker.tuesday?.toLowerCase() || null,
+      wednesday: worker.wednesday?.toLowerCase() || null,
+      thursday: worker.thursday?.toLowerCase() || null,
+      friday: worker.friday?.toLowerCase() || null,
+      saturday: worker.saturday?.toLowerCase() || null,
+      sunday: worker.sunday?.toLowerCase() || null,
+    }
+  }));
+
+  // 🔄 Process each station
   return stationsData.map((station) => {
-    const shiftType = getShiftType(station.time);
+    const shiftType = getShiftType(station.time).toLowerCase();
     const shiftDurationHours = getShiftDurationInHours(station.time);
     const currentStartInMinutes = getShiftStartInMinutes(station.time);
+    const day = station.day.toLowerCase();
 
+    // 🎯 Filter eligible workers
     const eligibleWorkers = workers.filter((worker) => {
-      const isAvailableOnDay = worker.availability
-        .some((day) => day.toLowerCase() === station.day.toLowerCase());
+      const shiftPreference = worker.availabilityByDay[day];
+      const isAvailable = shiftPreference === 'any' || shiftPreference === shiftType;
 
-      const prefersShift = worker.preferredShift.toLowerCase() === 'any' ||
-        worker.preferredShift.toLowerCase() === shiftType.toLowerCase();
+      const canWorkAtLocation = worker.canworkstations
+        .map(loc => loc.toLowerCase())
+        .includes(station.location.toLowerCase());
 
-      const canWorkAtLocation = worker.canWorkStations
-        .some((loc) => loc.toLowerCase() === station.location.toLowerCase());
+      const isNotAllocatedForDay = !workerAllocations[worker.id]?.includes(day);
 
-      const isNotAllocatedForDay = !workerAllocations[worker.id]?.some(
-        (day) => day.toLowerCase() === station.day.toLowerCase()
-      );
-
-      // 12-hour rest period check from previous day's end to today's start
-      const todayIndex = daysOfWeek.findIndex(d => d.toLowerCase() === station.day.toLowerCase());
+      const todayIndex = daysOfWeek.indexOf(day);
       const prevDay = todayIndex > 0 ? daysOfWeek[todayIndex - 1] : null;
 
       let hasEnoughRest = true;
-
       if (prevDay && workerShiftHistory[worker.id]?.[prevDay]) {
-        const prevTime = workerShiftHistory[worker.id][prevDay].time;
-        const prevEndInMinutes = getShiftEndInMinutes(prevTime);
-
-        let diff = currentStartInMinutes - prevEndInMinutes;
-        if (diff < 0) diff += 24 * 60;
-
-        hasEnoughRest = diff >= 720; // 12 hours = 720 minutes
-
-        /*if (!hasEnoughRest) {
-          console.log(`⛔ ${worker.name} skipped on ${station.day} due to insufficient rest (${diff} minutes) after previous shift on ${prevDay}`);
-        }*/
+        const prevEnd = getShiftEndInMinutes(workerShiftHistory[worker.id][prevDay].time);
+        let diff = currentStartInMinutes - prevEnd;
+        if (diff < 0) diff += 1440;
+        hasEnoughRest = diff >= 720;
       }
 
       const currentHours = workerTotalHours[worker.id] || 0;
-      const exceeds72HourLimit = currentHours + shiftDurationHours > 72;
+      const exceedsLimit = currentHours + shiftDurationHours > 72;
 
-      return (
-        isAvailableOnDay &&
-        prefersShift &&
-        canWorkAtLocation &&
-        isNotAllocatedForDay &&
-        hasEnoughRest &&
-        !exceeds72HourLimit
-      );
+      return isAvailable && canWorkAtLocation && isNotAllocatedForDay && hasEnoughRest && !exceedsLimit;
     });
 
+    // 🔽 Sort by total hours worked so far
     eligibleWorkers.sort((a, b) => {
-      return a.canWorkStations.indexOf(station.location) - b.canWorkStations.indexOf(station.location);
+      const hoursA = workerTotalHours[a.id] || 0;
+      const hoursB = workerTotalHours[b.id] || 0;
+      return hoursA - hoursB;
     });
 
     const bestWorker = eligibleWorkers[0];
 
     if (bestWorker) {
+      // Update tracking
       if (!workerAllocations[bestWorker.id]) workerAllocations[bestWorker.id] = [];
       if (!workerShiftHistory[bestWorker.id]) workerShiftHistory[bestWorker.id] = {};
       if (!workerTotalHours[bestWorker.id]) workerTotalHours[bestWorker.id] = 0;
 
-      workerAllocations[bestWorker.id].push(station.day);
-      workerShiftHistory[bestWorker.id][station.day] = { shiftType, time: station.time };
+      workerAllocations[bestWorker.id].push(day);
+      workerShiftHistory[bestWorker.id][day] = { shiftType, time: station.time };
       workerTotalHours[bestWorker.id] += shiftDurationHours;
 
       return {
