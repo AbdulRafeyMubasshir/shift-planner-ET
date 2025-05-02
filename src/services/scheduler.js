@@ -2,9 +2,8 @@ import supabase from '../supabaseClient';
 
 const getShiftType = (time) => {
   const startTime = parseInt(time.split('-')[0]);
-  if (startTime >= 600 && startTime < 1400) return 'early';
-  if (startTime >= 1400 && startTime < 2200) return 'late';
-  return 'night';
+  if (startTime < 1200) return 'early';
+  return 'late';
 };
 
 const getShiftDurationInHours = (time) => {
@@ -26,7 +25,7 @@ const getShiftEndInMinutes = (time) => {
   return Math.floor(end / 100) * 60 + (end % 100);
 };
 
-const daysOfWeek = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
 const allocateWorkers = async () => {
   // 🔐 Get session
