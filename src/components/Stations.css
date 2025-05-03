@@ -3,7 +3,6 @@
     width: 80%;
     max-width: 1300px; /* To ensure the container doesn’t stretch too wide on large screens */
     margin: 30px auto; /* Adds some spacing above and below the container */
-    margin-top: 2700px;
     padding: 20px;
     background-color: #f9f9f9;
     border-radius: 10px;

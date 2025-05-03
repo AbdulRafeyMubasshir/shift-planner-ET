@@ -9,6 +9,7 @@ const Workers = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [workerToDelete, setWorkerToDelete] = useState(null);
   const [organizationId, setOrganizationId] = useState(null);
+  
 
   // Fetch organization_id of logged-in user
   useEffect(() => {
@@ -66,36 +67,47 @@ const Workers = () => {
     setSelectedWorker((prev) => ({
       ...prev,
       [field]: field === 'canworkstations'
-        ? value.split(',').map((s) => s.trim())
+        ? value // store the value as a string (not an array)
         : value,
     }));
   };
+  
+  
 
   const handleSaveModal = async () => {
-    if (selectedWorker.id) {
-      // Update worker
+    // Convert canworkstations string to array before saving
+    const updatedWorker = {
+      ...selectedWorker,
+      canworkstations: selectedWorker.canworkstations
+        .split(',')
+        .map((item) => item.trim())
+        .filter((item) => item !== ''),
+    };
+  
+    if (updatedWorker.id) {
+      // Update existing worker
       const { data, error } = await supabase
         .from('workers')
         .update({
-          name: selectedWorker.name,
-          canworkstations: selectedWorker.canworkstations,
-          monday: selectedWorker.monday,
-          tuesday: selectedWorker.tuesday,
-          wednesday: selectedWorker.wednesday,
-          thursday: selectedWorker.thursday,
-          friday: selectedWorker.friday,
-          saturday: selectedWorker.saturday,
-          sunday: selectedWorker.sunday,
+          name: updatedWorker.name,
+          canworkstations: updatedWorker.canworkstations, // Save array form
+          monday: updatedWorker.monday,
+          tuesday: updatedWorker.tuesday,
+          wednesday: updatedWorker.wednesday,
+          thursday: updatedWorker.thursday,
+          friday: updatedWorker.friday,
+          saturday: updatedWorker.saturday,
+          sunday: updatedWorker.sunday,
         })
-        .eq('id', selectedWorker.id)
+        .eq('id', updatedWorker.id)
         .select();
-
+  
       if (error) {
         console.error('Error updating worker:', error);
       } else {
         setWorkers((prevWorkers) =>
           prevWorkers.map((worker) =>
-            worker.id === selectedWorker.id ? data[0] : worker
+            worker.id === updatedWorker.id ? data[0] : worker
           )
         );
       }
@@ -103,19 +115,22 @@ const Workers = () => {
       // Insert new worker
       const { data, error } = await supabase
         .from('workers')
-        .insert([{ ...selectedWorker, organization_id: organizationId }])
+        .insert([{ ...updatedWorker, organization_id: organizationId }])
         .select();
-
+  
       if (error) {
         console.error('Error saving new worker:', error);
       } else {
         setWorkers((prevWorkers) => [...prevWorkers, data[0]]);
       }
     }
-
+  
+    // Close modal and reset selected worker
     setShowModal(false);
     setSelectedWorker(null);
   };
+  
+  
 
   const handleDeleteWorker = async () => {
     const { error } = await supabase
@@ -164,14 +179,16 @@ const Workers = () => {
 
   return (
     <div className="workers-container">
-      <h1>Workers</h1>
+      <div className="sticky-header">
+  <h1>Workers</h1>
+  <button
+    onClick={handleAddWorker}
+    className="mb-4 px-4 py-2 bg-green-500 text-white rounded"
+  >
+    Add New Worker
+  </button>
+</div>
 
-      <button
-        onClick={handleAddWorker}
-        className="mb-4 px-4 py-2 bg-green-500 text-white rounded"
-      >
-        Add New Worker
-      </button>
 
       {workers.length === 0 && <p>No data loaded</p>}
 
@@ -179,13 +196,13 @@ const Workers = () => {
         <thead>
           <tr>
             <th>Name</th>
+            <th>Sunday</th>
             <th>Monday</th>
             <th>Tuesday</th>
             <th>Wednesday</th>
             <th>Thursday</th>
             <th>Friday</th>
             <th>Saturday</th>
-            <th>Sunday</th>
             <th>Can Work Stations</th>
             <th>Actions</th>
           </tr>
@@ -198,13 +215,13 @@ const Workers = () => {
               className="clickable-row"
             >
               <td>{worker.name}</td>
+              <td>{worker.sunday}</td>
               <td>{worker.monday}</td>
               <td>{worker.tuesday}</td>
               <td>{worker.wednesday}</td>
               <td>{worker.thursday}</td>
               <td>{worker.friday}</td>
               <td>{worker.saturday}</td>
-              <td>{worker.sunday}</td>
               <td>{worker.canworkstations?.join(', ')}</td>
               <td>
                 <button
@@ -270,13 +287,15 @@ const Workers = () => {
               </label>
             ))}
             <label>
-              Can Work Stations:
-              <input
-                type="text"
-                value={selectedWorker.canworkstations.join(', ')}
-                onChange={(e) => handleModalInputChange('canworkstations', e.target.value)}
-              />
-            </label>
+  Can Work Stations:
+  <input
+    type="text"
+    value={selectedWorker.canworkstations}  // Now using the string form (not an array)
+    onChange={(e) => handleModalInputChange('canworkstations', e.target.value)}  // Directly handle string input
+  />
+</label>
+
+
             <div className="modal-buttons">
               <button onClick={handleSaveModal} className="bg-blue-500 text-white px-4 py-2 rounded">Save</button>
               <button onClick={handleCloseModal} className="bg-gray-500 text-white px-4 py-2 rounded">Cancel</button>

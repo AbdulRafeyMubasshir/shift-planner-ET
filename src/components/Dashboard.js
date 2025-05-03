@@ -14,6 +14,7 @@ const Dashboard = () => {
   const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const [datesOfWeek, setDatesOfWeek] = useState({});
   const [showSearch, setShowSearch] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
   const [weekEndingDate, setWeekEndingDate] = useState('');
   const [unassignedStations, setUnassignedStations] = useState([]);
   const workersData = JSON.parse(localStorage.getItem('uploadedWorkers')) || []; 
@@ -463,7 +464,56 @@ const oldTime = oldAssignment.time || null;
         alert('Week ending date is missing');
         return;
       }
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session?.user) return;
   
+    const userId = session.user.id;
+  
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('organization_id, user_name')
+      .eq('id', userId)
+      .single();
+  
+    if (profileError || !profile) return;
+  
+    const organizationId = profile.organization_id;
+    const userName = profile.user_name;
+    // Step 1: Check if any schedule entries exist for the given weekEndingDate
+    const { data: existingSchedule, error: fetchError } = await supabase
+      .from('schedule_entries')
+      .select('*')
+      .eq('week_ending', weekEndingDate);
+
+    if (fetchError) {
+      console.error('Error fetching schedule entries:', fetchError);
+      return;
+    }
+
+    // Step 2: If no records exist, insert an audit log with "Schedule Created"
+    if (existingSchedule.length === 0) {
+      const { data: auditData, error: auditError } = await supabase
+        .from('schedule_audit')
+        .insert([{
+          organization_id: organizationId,  // You need to retrieve this from user session or context
+          worker_name: null,
+          day_of_week: null,
+          old_location: null,
+          old_time: null,
+          new_location: null,
+          new_time: null,
+          changed_by: userName,  
+          week_ending: weekEndingDate,
+          comments: 'Schedule Created',
+        }]);
+
+      if (auditError) {
+        console.error('Error inserting audit log:', auditError);
+        return;
+      }
+
+      console.log('Audit log inserted successfully:', auditData);
+    }
       await upsertSchedule(schedule, weekEndingDate);
       await saveAuditLog(weekEndingDate);
   
@@ -702,7 +752,67 @@ setUnassignedStations(unassigned);
     return { schedule, datesOfWeek };
   };
 
-
+  const deleteSchedule = async (weekEndingDate) => {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  
+    if (sessionError || !session?.user) {
+      throw new Error("User not logged in");
+    }
+  
+    const userId = session.user.id;
+  
+    // Get user's organization ID
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('organization_id, user_name')
+      .eq('id', userId)
+      .single();
+  
+    if (profileError || !profile) {
+      console.error('Error fetching profile:', profileError);
+      return null;
+    }
+  
+    const organizationId = profile.organization_id;
+    const userName = profile.user_name;
+    // Delete schedule rows for the specific week
+    const { data, error: deleteError } = await supabase
+      .from('schedule_entries')
+      .delete()
+      .eq('organization_id', organizationId)
+      .eq('week_ending', weekEndingDate);
+  
+    if (deleteError) {
+      console.error('Error deleting schedule:', deleteError);
+      return { success: false, message: 'Failed to delete schedule.' };
+    }
+    const auditLog = {
+      organization_id: organizationId,
+      worker_name: null,  // Since it's a full schedule deletion, no specific worker
+      day_of_week: null,  // No specific day, it's for the whole schedule
+      old_location: null,  // No old location, since the schedule is deleted
+      old_time: null,  // No old time, since the schedule is deleted
+      new_location: null,  // No new location, since it's a deletion
+      new_time: null,  // No new time, since it's a deletion
+      changed_by: userName,  // Use the user's email or username for "changed_by"
+      week_ending: weekEndingDate,
+      comments: 'Schedule Deleted',
+    };
+  
+    // Insert the audit log record into the schedule_audit table
+    const { data: auditData, error: auditError } = await supabase
+      .from('schedule_audit')
+      .insert([auditLog]);
+  
+    if (auditError) {
+      console.error('Error inserting audit log:', auditError);
+      return { success: false, message: 'Failed to log audit data.' };
+    }
+  
+    // Return a success message
+    return { success: true, message: 'Schedule deleted successfully.' };
+  };
+  
 
 
   return (
@@ -741,6 +851,7 @@ setUnassignedStations(unassigned);
             <th>New Location</th>
             <th>Old Time</th>
             <th>New Time</th>
+            <th>Comments</th>
             <th>Changed At</th>
             <th>Changed By</th>
           </tr>
@@ -754,6 +865,7 @@ setUnassignedStations(unassigned);
               <td>{entry.new_location}</td>
               <td>{entry.old_time}</td>
               <td>{entry.new_time}</td>
+              <td>{entry.comments}</td>
               <td>{new Date(new Date(entry.changed_at).getTime() + 60 * 60 * 1000).toLocaleString()}</td>
               <td>{entry.changed_by}</td>
             </tr>
@@ -765,7 +877,58 @@ setUnassignedStations(unassigned);
   </div>
 )}
 
+<div className="search-container">
+  {!showDelete ? (
+    <button className="search-schedule-button" onClick={() => setShowDelete(true)}>
+      Delete
+    </button>
+  ) : (
+    <form
+      className="search-form"
+      onSubmit={async (e) => {
+        e.preventDefault();
 
+        if (!weekEndingDate) {
+          alert("Please select a date first.");
+          return;
+        }
+        const confirmed = window.confirm('Are you sure you want to delete the schedule for this week?');
+        if (confirmed) {
+        const result = await deleteSchedule(weekEndingDate);
+        if (result?.success) {
+          console.log(result.message);  // Log success message (e.g., 'Schedule deleted successfully.')
+          
+          // Optionally clear out the state or update UI after deletion
+          setSchedule({});  
+    
+          alert('Schedule deleted successfully.');  // Optionally show a success message to the user
+        } else {
+          console.error(result?.message);  // Log the error message if deletion fails
+          alert('Failed to delete the schedule. Please try again.');
+        }
+      }
+      }}
+    > 
+      <button 
+              className="close-button" 
+              onClick={() => setShowDelete(false)} 
+              aria-label="Close"
+            >
+              Close
+            </button>
+      
+      <input
+        type="date"
+        value={weekEndingDate}
+        onChange={(e) => setWeekEndingDate(e.target.value)}
+        className="date-input"
+      />
+      <button type="submit" className="go-button">
+        Delete
+      </button>
+    </form>
+  )}
+</div>
       <div className="search-container">
   {!showSearch ? (
     <button className="search-schedule-button" onClick={() => setShowSearch(true)}>
@@ -791,6 +954,13 @@ setUnassignedStations(unassigned);
         }
       }}
     >
+      <button 
+              className="close-button" 
+              onClick={() => setShowSearch(false)} 
+              aria-label="Close"
+            >
+              Close
+            </button>
       <input
         type="date"
         value={weekEndingDate}

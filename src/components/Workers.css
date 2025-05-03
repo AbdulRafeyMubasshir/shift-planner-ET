@@ -5,30 +5,35 @@
     background-color: #f9f9f9;
     border-radius: 8px;
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    
   }
 /* Modal overlay to cover the entire screen */
 .modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5); /* Semi-transparent background */
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 1000; /* Make sure it's on top */
-  }
-  
-  /* Modal content box */
-  .modal-content {
-    background-color: white;
-    padding: 20px;
-    border-radius: 8px;
-    width: 300px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    position: relative;
-  }
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5); /* Semi-transparent background */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000; /* Make sure it's on top */
+}
+
+.modal-content {
+  background-color: white;
+  padding: 20px;
+  border-radius: 8px;
+  width: 90vw; /* Use percentage of the viewport width */
+  max-width: 600px; /* Limit the width */
+  max-height: 90vh; /* Limit the height */
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  position: relative;
+  overflow: auto; /* Allow scrolling if content overflows */
+  box-sizing: border-box; /* Ensure padding is included in the width/height calculation */
+}
+
   
   /* Style for the table */
   table {
@@ -87,5 +92,13 @@
   .clickable-row:hover {
     background-color: #f0f0f0;
     transition: background-color 0.3s ease;
+  }
+  .sticky-header {
+    position: sticky;
+    top: 0;
+    background-color: #f9f9f9; /* Match your .workers-container */
+    padding-top: 10px;
+    padding-bottom: 10px;
+    z-index: 10;
   }
   

@@ -64,7 +64,7 @@ const Login = () => {
       </form>
     
       <div className="register-link">
-        <p>Don't have an account? <a href="/register">Register here</a></p>
+        <p>Go to Home <a href="/">Click here</a></p>
       </div>
       
       {/* Scroll reference to scroll to the bottom */}

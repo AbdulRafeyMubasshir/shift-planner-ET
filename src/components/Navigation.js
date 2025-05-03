@@ -29,7 +29,10 @@ function Navigation({ user }) {
               <Link to="/login">Login</Link>
             </li>
             <li style={{ margin: '0 10px' }}>
-              <Link to="/register">Register</Link>
+              <Link to="/registeruser">Register User</Link>
+            </li>
+            <li style={{ margin: '0 10px' }}>
+              <Link to="/registerorganization">Register Organization</Link>
             </li>
           </>
         ) : (
