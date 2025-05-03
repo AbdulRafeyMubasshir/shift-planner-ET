@@ -119,6 +119,7 @@ const Dashboard = () => {
     const { data: stations, error: stationsError } = await supabase
     .from('stations')
     .select('date', { distinct: true })
+    .eq('organization_id', organizationId);
 
 if (stationsError) {
   throw new Error("Could not fetch stations data");
@@ -736,7 +737,21 @@ setUnassignedStations(unassigned);
         datesOfWeek[day_of_week] = date;
       }
     }
-  
+    const weekEndingDated = new Date(weekEndingDate);
+
+    if (!(weekEndingDated instanceof Date) || isNaN(weekEndingDated)) {
+        throw new Error('Invalid date string passed to getWeekDates');
+    }
+    // Fill map from Sunday to Saturday
+    for (let i = 0; i < 7; i++) {
+        const date = new Date(weekEndingDated);
+        console.log(date);
+        date.setDate(weekEndingDated.getDate() - (6 - i));
+        console.log(date);
+        const formattedDate = date.toISOString().split('T')[0];
+        datesOfWeek[daysOfWeek[i]] = formattedDate;
+        console.log(datesOfWeek[daysOfWeek[i]]);
+    }
     // Fill in unassigned days for each worker
     Object.keys(schedule).forEach((worker) => {
       daysOfWeek.forEach((day) => {
