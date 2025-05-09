@@ -59,9 +59,15 @@ const Workers = () => {
   }, [organizationId]);
 
   const handleRowDoubleClick = (worker) => {
-    setSelectedWorker(worker);
+    setSelectedWorker({
+      ...worker,
+      canworkstations: Array.isArray(worker.canworkstations)
+        ? worker.canworkstations.join(', ')
+        : '', // fallback in case it's null/undefined
+    });
     setShowModal(true);
   };
+  
 
   const handleModalInputChange = (field, value) => {
     setSelectedWorker((prev) => ({
@@ -155,7 +161,7 @@ const Workers = () => {
   const handleAddWorker = () => {
     setSelectedWorker({
       name: '',
-      canworkstations: [],
+      canworkstations: '',
       monday: '',
       tuesday: '',
       wednesday: '',
@@ -276,7 +282,7 @@ const Workers = () => {
                 onChange={(e) => handleModalInputChange('name', e.target.value)}
               />
             </label>
-            {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((day) => (
+            {['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].map((day) => (
               <label key={day}>
                 {day.charAt(0).toUpperCase() + day.slice(1)}:
                 <input
