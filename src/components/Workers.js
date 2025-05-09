@@ -46,7 +46,8 @@ const Workers = () => {
       const { data, error } = await supabase
         .from('workers')
         .select('*')
-        .eq('organization_id', organizationId);
+        .eq('organization_id', organizationId)
+        .order('created_at', { ascending: true });
 
       if (error) {
         console.error('Error fetching workers:', error);
