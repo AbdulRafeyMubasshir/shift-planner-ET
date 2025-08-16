@@ -261,3 +261,35 @@ button:active {
   width: 90%;
   max-width: 800px;
 }
+/* Dashboard.css */
+/* Table cell styles */
+
+/* Visual feedback for draggable cells */
+.dashboard-table td:hover {
+  cursor: grab;
+}
+.dashboard-table td:active {
+  cursor: grabbing;
+}
+/* Input styles */
+
+/* Highlight drop target */
+.dashboard-table td.over {
+  background-color: #e0f7fa;
+  border: 2px solid #0288d1;
+}
+/* Ensure table layout is consistent */
+
+/* Unassigned and scheduled cell styles */
+.unassigned {
+  background-color: #f1f1f1;
+}
+.scheduled {
+  /* Color is set dynamically via inline style */
+}
+.shift-duration {
+  display: block;
+  font-size: 14px;
+  color: #212121; /* Material Design Red 700 - a standout, vibrant red */
+  font-weight: 600;
+}
