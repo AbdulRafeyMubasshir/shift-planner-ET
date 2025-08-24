@@ -7,13 +7,14 @@ import allocateWorkers from '../services/scheduler';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import './Dashboard.css';
-import { supabase }  from '../supabaseClient';
+import { supabase } from '../supabaseClient';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 
 // SortableItem component for each table cell
-const SortableItem = ({ id, worker, day, daySchedule, stationColor, handleChange, setFocusedFieldValue, calculateShiftDuration }) => {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+// SortableItem component for each table cell
+const SortableItem = ({ id, worker, day, daySchedule, stationColor, handleChange, setFocusedFieldValue, calculateShiftDuration, isScheduleLocked }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled: isScheduleLocked });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -29,8 +30,7 @@ const SortableItem = ({ id, worker, day, daySchedule, stationColor, handleChange
     <td
       ref={setNodeRef}
       style={style}
-      {...attributes}
-      {...listeners}
+      {...(isScheduleLocked ? {} : { ...attributes, ...listeners })}
       className={daySchedule.location === 'Unassigned' ? 'unassigned' : 'scheduled'}
     >
       <div>
@@ -38,6 +38,7 @@ const SortableItem = ({ id, worker, day, daySchedule, stationColor, handleChange
           type="text"
           value={daySchedule.location !== 'Unassigned' ? daySchedule.location : ''}
           onFocus={() =>
+            !isScheduleLocked &&
             setFocusedFieldValue({
               worker,
               day,
@@ -45,13 +46,15 @@ const SortableItem = ({ id, worker, day, daySchedule, stationColor, handleChange
               value: daySchedule.location,
             })
           }
-          onChange={(e) => handleChange(worker, day, 'location', e.target.value)}
+          onChange={(e) => !isScheduleLocked && handleChange(worker, day, 'location', e.target.value)}
           placeholder="Location"
+          disabled={isScheduleLocked}
         />
         <input
           type="text"
           value={daySchedule.time}
           onFocus={() =>
+            !isScheduleLocked &&
             setFocusedFieldValue({
               worker,
               day,
@@ -59,8 +62,9 @@ const SortableItem = ({ id, worker, day, daySchedule, stationColor, handleChange
               value: daySchedule.time,
             })
           }
-          onChange={(e) => handleChange(worker, day, 'time', e.target.value)}
+          onChange={(e) => !isScheduleLocked && handleChange(worker, day, 'time', e.target.value)}
           placeholder="Time"
+          disabled={isScheduleLocked}
         />
         <span className="shift-duration">
           {daySchedule.time && shiftDuration !== '0.00' ? `${shiftDuration}` : '—'}
@@ -87,6 +91,7 @@ const Dashboard = () => {
   const [auditEntries, setAuditEntries] = useState([]);
   const [showAuditModal, setShowAuditModal] = useState(false);
   const [focusedFieldValue, setFocusedFieldValue] = useState(null);
+  const [isScheduleLocked, setIsScheduleLocked] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem('workerSchedule');
@@ -596,65 +601,190 @@ worksheet.getRow(startRow + 2).height = 30;   // Hours row
   saveAs(blob, 'worker_schedule.xlsx');
 };
 
-  const downloadDashboardAsPDF = () => {
-    const dashboard = document.querySelector('.dashboard-container');
-  
-    // Temporarily expand dashboard if needed
-    const originalOverflow = dashboard.style.overflow;
-    dashboard.style.overflow = 'visible';
-  
-    html2canvas(dashboard, {
-      scale: 2, // Higher quality
-      useCORS: true,
-      scrollY: -window.scrollY, // Fix position shift
-    }).then((canvas) => {
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('portrait', 'mm', 'a4');
-  
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-  
-      const imgWidth = pageWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-  
-      const pageHeightInPx = (canvas.width * pageHeight) / pageWidth;
-      let remainingHeight = canvas.height;
-      let position = 0;
-  
-      let pageCount = 0;
-  
-      while (remainingHeight > 0) {
-        const pageCanvas = document.createElement('canvas');
-        pageCanvas.width = canvas.width;
-        pageCanvas.height = Math.min(pageHeightInPx, remainingHeight);
-  
-        const ctx = pageCanvas.getContext('2d');
-        ctx.drawImage(
-          canvas,
-          0,
-          position,
-          canvas.width,
-          pageCanvas.height,
-          0,
-          0,
-          canvas.width,
-          pageCanvas.height
-        );
-  
-        const pageImgData = pageCanvas.toDataURL('image/png');
-        if (pageCount > 0) pdf.addPage();
-        const imgHeightOnPDF = (pageCanvas.height * imgWidth) / pageCanvas.width;
-        pdf.addImage(pageImgData, 'PNG', 0, 0, imgWidth, imgHeightOnPDF);
-  
-        position += pageCanvas.height;
-        remainingHeight -= pageCanvas.height;
-        pageCount++;
-      }
-  
-      pdf.save('dashboard.pdf');
-      dashboard.style.overflow = originalOverflow; // Restore styles
-    });
+  const downloadDashboardAsPDF = async () => {
+  const pdf = new jsPDF('portrait', 'mm', 'a4');
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const margin = 10;
+  const tableWidth = pageWidth - 2 * margin;
+  const colCount = daysOfWeek.length + 2; // Worker + 7 days + Hours Worked
+  const colWidth = tableWidth / colCount;
+  const rowHeight = 8; // Standard row height in mm
+  const headerRowHeight = 10;
+  const workerRowHeight = 18; // Adjusted for time/location/hours rows
+  const separatorRowHeight = 2;
+  let yPosition = margin;
+
+  // Helper function to convert hex to RGB
+  const hexToRgb = (hex) => {
+    hex = hex.replace(/^#/, '');
+    if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+    const r = parseInt(hex.substr(0, 2), 16);
+    const g = parseInt(hex.substr(2, 2), 16);
+    const b = parseInt(hex.substr(4, 2), 16);
+    return { r, g, b };
   };
+
+  // Helper function to normalize ARGB
+  const normalizeToARGB = (colorInput) => {
+    if (!colorInput) return 'FFF1F1F1';
+    let s = String(colorInput).trim();
+    if (s.startsWith('#')) s = s.slice(1);
+    s = s.toUpperCase();
+    if (s.length === 3) s = s.split('').map(c => c + c).join('');
+    if (s.length === 6) return 'FF' + s;
+    if (s.length === 8) return s;
+    return 'FFF1F1F1';
+  };
+
+  // Set font
+  pdf.setFont('Arial');
+
+  // *** Header Block ***
+  // Row 1: Title
+  pdf.setFontSize(16);
+  pdf.setFont('Arial', 'bold');
+  pdf.setTextColor(0, 0, 0);
+  pdf.setFillColor(211, 211, 211); // FFD3D3D3
+  pdf.rect(margin, yPosition, tableWidth, headerRowHeight, 'F');
+  pdf.text('Temporary Worker Timesheet & Roster', pageWidth / 2, yPosition + 7, { align: 'center' });
+  pdf.setLineWidth(0.2);
+  pdf.setDrawColor(33, 33, 33); // FF212121
+  pdf.rect(margin, yPosition, tableWidth, headerRowHeight);
+  yPosition += headerRowHeight;
+
+  // Row 2: Spacer
+  yPosition += 5; // Adjusted for 20px height (~5mm)
+  pdf.setFillColor(211, 211, 211);
+  pdf.rect(margin, yPosition, tableWidth, 5, 'F');
+  yPosition += 5;
+
+  // Rows 3-5: Reference, Job Title, Week Ending
+  const headerFields = [
+    { left: 'Our Reference:', right: 'Client:' },
+    { left: 'Job Title:', right: 'Purchase Order:' },
+    { left: '', right: 'Week Ending Date: ' + (datesOfWeek['Saturday'] || '—') },
+  ];
+  pdf.setFontSize(12);
+  pdf.setFont('Arial', 'normal');
+  headerFields.forEach(({ left, right }) => {
+    pdf.setFillColor(211, 211, 211);
+    pdf.rect(margin, yPosition, tableWidth / 2, rowHeight, 'F');
+    pdf.rect(margin + tableWidth / 2, yPosition, tableWidth / 2, rowHeight, 'F');
+    pdf.setTextColor(0, 0, 0);
+    pdf.text(left, margin + 2, yPosition + 6);
+    pdf.text(right, margin + tableWidth / 2 + 2, yPosition + 6);
+    pdf.rect(margin, yPosition, tableWidth / 2, rowHeight);
+    pdf.rect(margin + tableWidth / 2, yPosition, tableWidth / 2, rowHeight);
+    yPosition += rowHeight;
+  });
+
+  // Spacer row
+  yPosition += 2;
+
+  // *** Schedule Table Headers ***
+  const headers = ['Day', ...daysOfWeek, '72h Limit'];
+  const datesRow = ['Date', ...daysOfWeek.map(day => datesOfWeek[day] || '—'), 'Total Hours'];
+  [headers, datesRow].forEach(rowData => {
+    pdf.setFontSize(12);
+    pdf.setFont('Arial', 'bold');
+    pdf.setTextColor(33, 33, 33);
+    rowData.forEach((cell, idx) => {
+      const x = margin + idx * colWidth;
+      pdf.text(cell, x + colWidth / 2, yPosition + 6, { align: 'center' });
+      pdf.rect(x, yPosition, colWidth, rowHeight);
+    });
+    yPosition += rowHeight;
+  });
+
+  // *** Worker Rows ***
+  Object.keys(schedule).forEach((worker, workerIdx) => {
+    if (yPosition > pageHeight - margin - 3 * workerRowHeight - separatorRowHeight) {
+      pdf.addPage();
+      yPosition = margin;
+    }
+
+    const startRowY = yPosition;
+
+    // Time row
+    const timeRow = [worker];
+    daysOfWeek.forEach(day => {
+      const { time } = schedule[worker][day] || {};
+      timeRow.push(time || '—');
+    });
+    timeRow.push('');
+    timeRow.forEach((cell, idx) => {
+      const x = margin + idx * colWidth;
+      pdf.setFontSize(11);
+      pdf.setFont('Arial', idx === 0 ? 'bold' : 'normal');
+      pdf.setTextColor(33, 33, 33);
+      if (idx === 0) {
+        pdf.setFillColor(211, 211, 211);
+        pdf.rect(x, yPosition, colWidth, workerRowHeight * 2, 'F'); // Merged cell
+        pdf.text(cell, x + colWidth / 2, yPosition + workerRowHeight, { align: 'center', maxWidth: colWidth - 2 }); // Center vertically in merged cell
+      } else {
+        pdf.rect(x, yPosition, colWidth, workerRowHeight);
+        pdf.text(cell, x + colWidth / 2, yPosition + 8, { align: 'center', maxWidth: colWidth - 2 });
+      }
+    });
+    yPosition += workerRowHeight;
+
+    // Location row
+    const locationRow = [''];
+    daysOfWeek.forEach(day => {
+      const loc = (schedule[worker][day] && schedule[worker][day].location) || '—';
+      locationRow.push(loc);
+    });
+    locationRow.push('');
+    locationRow.forEach((cell, idx) => {
+      const x = margin + idx * colWidth;
+      pdf.setFontSize(8);
+      pdf.setFont('Arial', 'bold');
+      pdf.setTextColor(33, 33, 33);
+      if (idx > 0 && idx <= daysOfWeek.length) {
+        const locVal = locationRow[idx] || '—';
+        const baseColor = getStationColor(locVal) || '#f1f1f1';
+        const argb = normalizeToARGB(baseColor);
+        const { r, g, b } = hexToRgb(argb.slice(2));
+        pdf.setFillColor(r, g, b);
+        pdf.rect(x, yPosition, colWidth, workerRowHeight, 'F');
+      }
+      pdf.text(cell, x + colWidth / 2, yPosition + 8, { align: 'center', maxWidth: colWidth - 2 });
+      if (idx !== 0) {
+        pdf.rect(x, yPosition, colWidth, workerRowHeight);
+      }
+    });
+    yPosition += workerRowHeight;
+
+    // Hours row
+    const hoursRow = ['Hours Worked'];
+    daysOfWeek.forEach(day => {
+      const time = schedule[worker][day] && schedule[worker][day].time;
+      const duration = calculateShiftDuration(time);
+      hoursRow.push(time && duration !== '0.00' ? `${duration}` : '—');
+    });
+    hoursRow.push(calculateHoursWorked(schedule[worker]));
+    hoursRow.forEach((cell, idx) => {
+      const x = margin + idx * colWidth;
+      pdf.setFontSize(11);
+      pdf.setFont('Arial', idx === 0 ? 'bold' : 'normal');
+      pdf.setTextColor(33, 33, 33);
+      pdf.text(cell, x + colWidth / 2, yPosition + 8, { align: 'center', maxWidth: colWidth - 2 });
+      pdf.rect(x, yPosition, colWidth, workerRowHeight);
+    });
+    yPosition += workerRowHeight;
+
+    // Merge worker name cell
+    pdf.rect(margin, startRowY, colWidth, workerRowHeight * 2);
+
+    // Separator row
+    pdf.setFillColor(79, 79, 79); // FF4F4F4F
+    pdf.rect(margin, yPosition, tableWidth, separatorRowHeight, 'F');
+    yPosition += separatorRowHeight;
+  });
+
+  pdf.save('worker_schedule.pdf');
+};
   
   const handleUnassignedChange = (index, field, value) => {
     setUnassignedStations((prev) => {
@@ -759,6 +889,10 @@ const oldTime = oldAssignment.time || null;
   
 
   const handleChange = (worker, day, field, newValue) => {
+    if (isScheduleLocked) {
+    alert('Schedule is locked and cannot be modified.');
+    return;
+  }
     const prevValue = schedule[worker][day][field];
   
     // Ignore if no real change
@@ -994,6 +1128,23 @@ setUnassignedStations(unassigned);
   
     const organizationId = profile.organization_id;
   
+    // Check if any row for this week_ending is locked
+  const { data: lockedRows, error: fetchError } = await supabase
+    .from('schedule_entries')
+    .select('is_locked')
+    .eq('organization_id', organizationId)
+    .eq('week_ending', weekEndingDate)
+    .eq('is_locked', true)
+    .limit(1); // We only need one locked row to confirm the schedule is locked
+  if (fetchError) {
+    throw new Error('Failed to check lock status: ' + fetchError.message);
+  
+  }
+  // If any row is locked, the entire schedule is locked, so skip the upsert
+  if (lockedRows.length > 0) {
+    throw new Error('Cannot save schedule: the schedule for this week is locked.');
+  }
+
     // Flatten schedule
     const entries = [];
   
@@ -1007,12 +1158,17 @@ setUnassignedStations(unassigned);
           time: entry.time || '',
           date: entry.date || null,
           week_ending: weekEndingDate,
+          is_locked: isScheduleLocked || false, // Use the current lock state from component
         };
         entries.push(entryObject);
       });
     });
   
+  // If no entries to upsert, return early
+  if (entries.length === 0) {
+    throw new Error('No entries to save.');
   
+  }
     // Upsert into schedule_entries table
     const { error: upsertError } = await supabase
       .from('schedule_entries')
@@ -1069,9 +1225,10 @@ setUnassignedStations(unassigned);
     // Convert flat rows back to nested structure
     const schedule = {};
     const datesOfWeek = {};
+    let isLocked = false;
   
     for (const row of rows) {
-      const { worker_name, day_of_week, location, time, date } = row;
+      const { worker_name, day_of_week, location, time, date, is_locked } = row;
   
       if (!schedule[worker_name]) {
         schedule[worker_name] = {};
@@ -1086,6 +1243,7 @@ setUnassignedStations(unassigned);
       if (!datesOfWeek[day_of_week]) {
         datesOfWeek[day_of_week] = date;
       }
+      isLocked = is_locked; // Set lock state (assumes all rows for week_ending have same is_locked)
     }
     const weekEndingDated = new Date(weekEndingDate);
 
@@ -1113,6 +1271,7 @@ setUnassignedStations(unassigned);
         }
       });
     });
+    setIsScheduleLocked(isLocked); // Set the lock state
   
     return { schedule, datesOfWeek };
   };
@@ -1179,6 +1338,10 @@ setUnassignedStations(unassigned);
   };
   
   const handleDragEnd = async (event) => {
+    if (isScheduleLocked) {
+    alert('Schedule is locked and cannot be modified.');
+    return;
+  }
   console.log('Drag end event:', event);
   const { active, over } = event;
 
@@ -1285,7 +1448,7 @@ setUnassignedStations(unassigned);
 
 
   return (
-    <div className="dashboard-container">
+    <div className={`dashboard-container ${isScheduleLocked ? 'locked' : ''}`}>
       <h1 className="dashboard-header">Dashboard</h1>
       <p className="dashboard-description">Welcome to the Dashboard! Below is the schedule for the stations and allocated workers.</p>
       <div className='button-container'>
@@ -1345,7 +1508,55 @@ setUnassignedStations(unassigned);
     </div>
   </div>
 )}
-
+<button
+          className="lock-button"
+          onClick={async () => {
+            const newLockState = !isScheduleLocked;
+            setIsScheduleLocked(newLockState);
+            const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+            if (sessionError || !session?.user) {
+              console.error('Session error:', sessionError);
+              return;
+            }
+            const userId = session.user.id;
+            const { data: profile, error: profileError } = await supabase
+              .from('profiles')
+              .select('organization_id, user_name')
+              .eq('id', userId)
+              .single();
+            if (profileError || !profile) {
+              console.error('Profile error:', profileError);
+              return;
+            }
+            const organizationId = profile.organization_id;
+            const userName = profile.user_name;
+            const weekEndingDate = datesOfWeek['Saturday'];
+            const { error: updateError } = await supabase
+              .from('schedule_entries')
+              .update({ is_locked: newLockState })
+              .eq('organization_id', organizationId)
+              .eq('week_ending', weekEndingDate);
+            if (updateError) {
+              console.error('Error updating lock state:', updateError);
+              alert('Failed to update lock state in database.');
+              return;
+            }
+            await supabase.from('schedule_audit').insert([{
+              organization_id: organizationId,
+              worker_name: null,
+              day_of_week: null,
+              old_location: null,
+              new_location: null,
+              old_time: null,
+              new_time: null,
+              changed_by: userName,
+              week_ending: weekEndingDate,
+              comments: newLockState ? 'Schedule Locked' : 'Schedule Unlocked',
+            }]);
+          }}
+        >
+          {isScheduleLocked ? 'Unlock Schedule' : 'Lock Schedule'}
+        </button>
 <div className="search-container">
   {!showDelete ? (
     <button className="search-schedule-button" onClick={() => setShowDelete(true)}>
@@ -1490,6 +1701,7 @@ setUnassignedStations(unassigned);
                           handleChange={handleChange}
                           setFocusedFieldValue={setFocusedFieldValue}
                           calculateShiftDuration={calculateShiftDuration}
+                          isScheduleLocked={isScheduleLocked}
                         />
                       );
                 })}
@@ -1523,6 +1735,7 @@ setUnassignedStations(unassigned);
                 type="text"
                 value={station.location}
                 onChange={(e) => handleUnassignedChange(index, 'location', e.target.value)}
+                isabled={isScheduleLocked}
               />
             </td>
             <td>
@@ -1530,6 +1743,7 @@ setUnassignedStations(unassigned);
                 type="text"
                 value={station.time}
                 onChange={(e) => handleUnassignedChange(index, 'time', e.target.value)}
+                isabled={isScheduleLocked}
               />
             </td>
             <td>
@@ -1538,10 +1752,11 @@ setUnassignedStations(unassigned);
                 placeholder="Worker name"
                 value={station.assignedWorker || ''}
                 onChange={(e) => handleUnassignedChange(index, 'assignedWorker', e.target.value)}
+                isabled={isScheduleLocked}
               />
             </td>
             <td>
-              <button onClick={() => assignUnassignedStation(index)}>Assign</button>
+              <button onClick={() => assignUnassignedStation(index)}disabled={isScheduleLocked}>Assign</button>
             </td>
           </tr>
         ))}
