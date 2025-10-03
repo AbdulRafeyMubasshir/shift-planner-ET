@@ -1727,39 +1727,53 @@ setUnassignedStations(unassigned);
         </tr>
       </thead>
       <tbody>
-        {unassignedStations.map((station, index) => (
-          <tr key={index}>
-            <td>{station.day}</td>
-            <td>
-              <input
-                type="text"
-                value={station.location}
-                onChange={(e) => handleUnassignedChange(index, 'location', e.target.value)}
-                isabled={isScheduleLocked}
-              />
-            </td>
-            <td>
-              <input
-                type="text"
-                value={station.time}
-                onChange={(e) => handleUnassignedChange(index, 'time', e.target.value)}
-                isabled={isScheduleLocked}
-              />
-            </td>
-            <td>
-              <input
-                type="text"
-                placeholder="Worker name"
-                value={station.assignedWorker || ''}
-                onChange={(e) => handleUnassignedChange(index, 'assignedWorker', e.target.value)}
-                isabled={isScheduleLocked}
-              />
-            </td>
-            <td>
-              <button onClick={() => assignUnassignedStation(index)}disabled={isScheduleLocked}>Assign</button>
-            </td>
-          </tr>
-        ))}
+        {unassignedStations
+          .slice() // Create a copy to avoid mutating the original array
+          .sort((a, b) => daysOfWeek.indexOf(a.day) - daysOfWeek.indexOf(b.day)) // Sort by day order
+          .map((station, index) => (
+            <tr key={index}>
+              <td>{station.day}</td>
+              <td>
+                <input
+                  type="text"
+                  value={station.location}
+                  onChange={(e) => handleUnassignedChange(index, 'location', e.target.value)}
+                  disabled={isScheduleLocked}
+                />
+              </td>
+              <td>
+                <input
+                  type="text"
+                  value={station.time}
+                  onChange={(e) => handleUnassignedChange(index, 'time', e.target.value)}
+                  disabled={isScheduleLocked}
+                />
+              </td>
+              <td>
+                <select
+                  value={station.assignedWorker || ''}
+                  onChange={(e) => handleUnassignedChange(index, 'assignedWorker', e.target.value)}
+                  disabled={isScheduleLocked}
+                  aria-label="Select worker to assign"
+                >
+                  <option value="">Select a worker</option>
+                  {uniqueWorkers.map((worker) => (
+                    <option key={worker} value={worker}>
+                      {worker}
+                    </option>
+                  ))}
+                </select>
+              </td>
+              <td>
+                <button
+                  onClick={() => assignUnassignedStation(index)}
+                  disabled={isScheduleLocked}
+                >
+                  Assign
+                </button>
+              </td>
+            </tr>
+          ))}
       </tbody>
     </table>
   </div>
