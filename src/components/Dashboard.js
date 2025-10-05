@@ -885,6 +885,13 @@ if (!workerExists) {
   alert(`⚠️ Worker "${worker}" does not exist. Please enter a valid worker name.`);
   return;
 }
+ // Check if worker already has a shift on this day
+  if (schedule[worker]?.[station.day].location != 'Unassigned') {
+    alert(
+  `⚠️ Worker "${worker}" already has a shift assigned on ${station.day} at ${schedule[worker][station.day].location} (${schedule[worker][station.day].time}).`
+);
+    return;
+  }
 // Capture current values before update
 const oldAssignment = schedule[worker]?.[station.day] || {};
 const oldLocation = oldAssignment.location || null;
