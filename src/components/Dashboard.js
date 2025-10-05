@@ -92,6 +92,48 @@ const Dashboard = () => {
   const [showAuditModal, setShowAuditModal] = useState(false);
   const [focusedFieldValue, setFocusedFieldValue] = useState(null);
   const [isScheduleLocked, setIsScheduleLocked] = useState(false);
+  const [workers, setWorkers] = useState([]);
+
+  useEffect(() => {
+  const fetchWorkers = async () => {
+    try {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session?.user) {
+        console.error('Session error:', sessionError);
+        return;
+      }
+
+      const userId = session.user.id;
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('organization_id')
+        .eq('id', userId)
+        .single();
+
+      if (profileError || !profile) {
+        console.error('Profile error:', profileError);
+        return;
+      }
+
+      const organizationId = profile.organization_id;
+      const { data: workersData, error: workerError } = await supabase
+        .from('workers')
+        .select('name')
+        .eq('organization_id', organizationId);
+
+      if (workerError) {
+        console.error('Error fetching workers:', workerError);
+        return;
+      }
+
+      setWorkers(workersData.map(worker => worker.name).sort());
+    } catch (error) {
+      console.error('Error in fetchWorkers:', error);
+    }
+  };
+
+  fetchWorkers();
+}, []);
 
   useEffect(() => {
     const saved = localStorage.getItem('workerSchedule');
@@ -836,7 +878,7 @@ if (workerError || !workersData) {
 
 // Validate worker existence (case-insensitive)
 const workerExists = workersData.some(
-  (w) => w.name.toLowerCase() === worker.toLowerCase()
+  (w) => w.name.toLowerCase().trim() === worker.toLowerCase().trim()
 );
 
 if (!workerExists) {
@@ -1727,40 +1769,52 @@ setUnassignedStations(unassigned);
         </tr>
       </thead>
       <tbody>
-        {unassignedStations.map((station, index) => (
-          <tr key={index}>
-            <td>{station.day}</td>
-            <td>
-              <input
-                type="text"
-                value={station.location}
-                onChange={(e) => handleUnassignedChange(index, 'location', e.target.value)}
-                isabled={isScheduleLocked}
-              />
-            </td>
-            <td>
-              <input
-                type="text"
-                value={station.time}
-                onChange={(e) => handleUnassignedChange(index, 'time', e.target.value)}
-                isabled={isScheduleLocked}
-              />
-            </td>
-            <td>
-              <input
-                type="text"
-                placeholder="Worker name"
-                value={station.assignedWorker || ''}
-                onChange={(e) => handleUnassignedChange(index, 'assignedWorker', e.target.value)}
-                isabled={isScheduleLocked}
-              />
-            </td>
-            <td>
-              <button onClick={() => assignUnassignedStation(index)}disabled={isScheduleLocked}>Assign</button>
-            </td>
-          </tr>
-        ))}
-      </tbody>
+  {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day) =>
+    unassignedStations.map((station, index) =>
+      station.day === day ? (
+        <tr key={index}>
+          <td>{station.day}</td>
+          <td>
+            <input
+              type="text"
+              value={station.location}
+              onChange={(e) => handleUnassignedChange(index, 'location', e.target.value)}
+              disabled={isScheduleLocked}
+            />
+          </td>
+          <td>
+            <input
+              type="text"
+              value={station.time}
+              onChange={(e) => handleUnassignedChange(index, 'time', e.target.value)}
+              disabled={isScheduleLocked}
+            />
+          </td>
+          <td>
+            <select
+              value={station.assignedWorker || ''}
+              onChange={(e) => handleUnassignedChange(index, 'assignedWorker', e.target.value)}
+              disabled={isScheduleLocked}
+            >
+              <option value="">Select Worker</option>
+              {workers.map((worker, idx) => (
+                <option key={idx} value={worker}>
+                  {worker}
+                </option>
+              ))}
+            </select>
+          </td>
+          <td>
+            <button onClick={() => assignUnassignedStation(index)} disabled={isScheduleLocked}>
+              Assign
+            </button>
+          </td>
+        </tr>
+      ) : null
+    )
+  )}
+</tbody>
+
     </table>
   </div>
 )}
