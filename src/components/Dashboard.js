@@ -12,9 +12,10 @@ import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 
 // SortableItem component for each table cell
-// SortableItem component for each table cell
-const SortableItem = ({ id, worker, day, daySchedule, stationColor, handleChange, setFocusedFieldValue, calculateShiftDuration, isScheduleLocked }) => {
+
+const SortableItem = ({ id, worker, day, daySchedule, stationColor, handleChange, setFocusedFieldValue, calculateShiftDuration, isScheduleLocked, handleUnassign, closeAllContextMenus, setContextMenuOpen }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled: isScheduleLocked });
+  const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0 });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -26,51 +27,101 @@ const SortableItem = ({ id, worker, day, daySchedule, stationColor, handleChange
 
   const shiftDuration = calculateShiftDuration(daySchedule.time);
 
+  // Handle right-click to show context menu
+  const handleContextMenu = (e) => {
+    if (isScheduleLocked || daySchedule.location === 'Unassigned') return;
+    e.preventDefault();
+    setContextMenu({
+      visible: true,
+      x: e.clientX,
+      y: e.clientY,
+    });
+    setContextMenuOpen(true); // Notify parent that a context menu is open
+  };
+
+  // Handle clicking the unassign option
+  const handleUnassignClick = () => {
+    handleUnassign(worker, day, daySchedule);
+    setContextMenu({ visible: false, x: 0, y: 0 });
+    setContextMenuOpen(false); // Notify parent that the context menu is closed
+  };
+
+  // Close context menu when triggered by parent or clicking on the menu
+  const handleCloseContextMenu = () => {
+    setContextMenu({ visible: false, x: 0, y: 0 });
+    setContextMenuOpen(false); // Notify parent that the context menu is closed
+  };
+
+  // Listen for close signal from parent
+  React.useEffect(() => {
+    if (closeAllContextMenus) {
+      setContextMenu({ visible: false, x: 0, y: 0 });
+      setContextMenuOpen(false);
+    }
+  }, [closeAllContextMenus, setContextMenuOpen]);
+
   return (
-    <td
-      ref={setNodeRef}
-      style={style}
-      {...(isScheduleLocked ? {} : { ...attributes, ...listeners })}
-      className={daySchedule.location === 'Unassigned' ? 'unassigned' : 'scheduled'}
-    >
-      <div>
-        <input
-          type="text"
-          value={daySchedule.location !== 'Unassigned' ? daySchedule.location : ''}
-          onFocus={() =>
-            !isScheduleLocked &&
-            setFocusedFieldValue({
-              worker,
-              day,
-              field: 'location',
-              value: daySchedule.location,
-            })
-          }
-          onChange={(e) => !isScheduleLocked && handleChange(worker, day, 'location', e.target.value)}
-          placeholder="Location"
-          disabled={isScheduleLocked}
-        />
-        <input
-          type="text"
-          value={daySchedule.time}
-          onFocus={() =>
-            !isScheduleLocked &&
-            setFocusedFieldValue({
-              worker,
-              day,
-              field: 'time',
-              value: daySchedule.time,
-            })
-          }
-          onChange={(e) => !isScheduleLocked && handleChange(worker, day, 'time', e.target.value)}
-          placeholder="Time"
-          disabled={isScheduleLocked}
-        />
-        <span className="shift-duration">
-          {daySchedule.time && shiftDuration !== '0.00' ? `${shiftDuration}` : '—'}
-        </span>
-      </div>
-    </td>
+    <>
+      <td
+        ref={setNodeRef}
+        style={style}
+        {...(isScheduleLocked ? {} : { ...attributes, ...listeners })}
+        className={daySchedule.location === 'Unassigned' ? 'unassigned' : 'scheduled'}
+        onContextMenu={handleContextMenu}
+      >
+        <div>
+          <input
+            type="text"
+            value={daySchedule.location !== 'Unassigned' ? daySchedule.location : ''}
+            onFocus={() =>
+              !isScheduleLocked &&
+              setFocusedFieldValue({
+                worker,
+                day,
+                field: 'location',
+                value: daySchedule.location,
+              })
+            }
+            onChange={(e) => !isScheduleLocked && handleChange(worker, day, 'location', e.target.value)}
+            placeholder="Location"
+            disabled={isScheduleLocked}
+          />
+          <input
+            type="text"
+            value={daySchedule.time}
+            onFocus={() =>
+              !isScheduleLocked &&
+              setFocusedFieldValue({
+                worker,
+                day,
+                field: 'time',
+                value: daySchedule.time,
+              })
+            }
+            onChange={(e) => !isScheduleLocked && handleChange(worker, day, 'time', e.target.value)}
+            placeholder="Time"
+            disabled={isScheduleLocked}
+          />
+          <span className="shift-duration">
+            {daySchedule.time && shiftDuration !== '0.00' ? `${shiftDuration}` : '—'}
+          </span>
+        </div>
+      </td>
+      {contextMenu.visible && (
+        <div
+          className="context-menu"
+          style={{ top: contextMenu.y, left: contextMenu.x, position: 'absolute', zIndex: 1000 }}
+          onClick={handleCloseContextMenu}
+        >
+          <div
+            className="context-menu-item"
+            onClick={handleUnassignClick}
+          >
+            Unassign
+          </div>
+        </div>
+      )}
+    </>
   );
 };
 
@@ -93,6 +144,9 @@ const Dashboard = () => {
   const [focusedFieldValue, setFocusedFieldValue] = useState(null);
   const [isScheduleLocked, setIsScheduleLocked] = useState(false);
   const [workers, setWorkers] = useState([]);
+  const [contextMenuOpen, setContextMenuOpen] = useState(false); // Track if any context menu is open
+  const [closeAllContextMenus, setCloseAllContextMenus] = useState(false); // Trigger to close all menus
+
 
   useEffect(() => {
   const fetchWorkers = async () => {
@@ -165,6 +219,23 @@ const Dashboard = () => {
     window.scrollTo(0, 0);
   }, []);
 
+  // New useEffect for global click listener to close context menus
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      // Only close if a context menu is open and the click is not on a context menu
+      if (contextMenuOpen && !event.target.closest('.context-menu')) {
+        setCloseAllContextMenus(true);
+        setContextMenuOpen(false);
+        // Reset closeAllContextMenus after a short delay to allow SortableItem to react
+        setTimeout(() => setCloseAllContextMenus(false), 0);
+      }
+    };
+
+    document.addEventListener('click', handleClickOutside);
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+    };
+  }, [contextMenuOpen]);
 
   const formatSchedule = async (allocatedSchedule) => {
     const formattedSchedule = {};
@@ -435,6 +506,82 @@ const normalizeToARGB = (colorInput) => {
   if (s.length === 8) return s;
 
   return 'FFF1F1F1';
+};
+
+const handleUnassign = async (worker, day, daySchedule) => {
+  if (isScheduleLocked) {
+    alert('Schedule is locked and cannot be modified.');
+    return;
+  }
+
+  try {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session?.user) {
+      throw new Error('User not logged in');
+    }
+
+    const userId = session.user.id;
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('organization_id, user_name')
+      .eq('id', userId)
+      .single();
+
+    if (profileError || !profile) {
+      throw new Error('Could not fetch user profile');
+    }
+
+    const organizationId = profile.organization_id;
+    const userName = profile.user_name;
+
+    // Add to unassignedStations
+    setUnassignedStations((prev) => [
+      ...prev,
+      {
+        day,
+        location: daySchedule.location,
+        time: daySchedule.time,
+        date: daySchedule.date || '',
+        assignedWorker: '', // No worker assigned
+      },
+    ]);
+
+    // Update the schedule to mark as unassigned
+    setSchedule((prevSchedule) => {
+      const updatedSchedule = { ...prevSchedule };
+      updatedSchedule[worker][day] = {
+        location: 'Unassigned',
+        time: '',
+        date: daySchedule.date || '',
+      };
+      return updatedSchedule;
+    });
+
+    // Add to audit log buffer
+    setAuditLogBuffer((prevLog) => [
+      ...prevLog,
+      {
+        worker_name: worker,
+        day_of_week: day,
+        field: 'location',
+        old_value: daySchedule.location,
+        new_value: 'Unassigned',
+      },
+      {
+        worker_name: worker,
+        day_of_week: day,
+        field: 'time',
+        old_value: daySchedule.time,
+        new_value: '',
+      },
+    ]);
+
+    // Save changes to the database
+    await handleSave();
+  } catch (error) {
+    console.error('Error unassigning shift:', error);
+    alert('Failed to unassign shift: ' + error.message);
+  }
 };
 
 const exportToExcel = async () => {
@@ -1751,6 +1898,9 @@ setUnassignedStations(unassigned);
                           setFocusedFieldValue={setFocusedFieldValue}
                           calculateShiftDuration={calculateShiftDuration}
                           isScheduleLocked={isScheduleLocked}
+                          handleUnassign={handleUnassign}
+                          closeAllContextMenus={closeAllContextMenus}
+                          setContextMenuOpen={setContextMenuOpen}
                         />
                       );
                 })}

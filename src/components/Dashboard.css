@@ -329,3 +329,20 @@ button:active {
   background-color: #e0e0e0;
   cursor: not-allowed;
 }
+.context-menu {
+  background-color: #fff;
+  border: 1px solid #ccc;
+  box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  padding: 5px 0;
+}
+
+.context-menu-item {
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.context-menu-item:hover {
+  background-color: #f0f0f0;
+}
