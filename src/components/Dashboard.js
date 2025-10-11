@@ -10,6 +10,7 @@ import './Dashboard.css';
 import { supabase } from '../supabaseClient';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
+import { createPortal } from 'react-dom';
 
 // SortableItem component for each table cell
 
@@ -53,12 +54,46 @@ const SortableItem = ({ id, worker, day, daySchedule, stationColor, handleChange
   };
 
   // Listen for close signal from parent
-  React.useEffect(() => {
+  useEffect(() => {
     if (closeAllContextMenus) {
       setContextMenu({ visible: false, x: 0, y: 0 });
       setContextMenuOpen(false);
     }
   }, [closeAllContextMenus, setContextMenuOpen]);
+
+  // Portal for context menu
+  const contextMenuPortal = contextMenu.visible ? createPortal(
+    <div
+      className="context-menu"
+      style={{
+        position: 'fixed', // Use fixed to position relative to viewport
+        top: contextMenu.y,
+        left: contextMenu.x,
+        zIndex: 10000, // High z-index to ensure it’s above everything
+        background: '#fff',
+        border: '1px solid #ccc',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+        padding: '5px',
+        borderRadius: '4px',
+      }}
+      onClick={handleCloseContextMenu}
+    >
+      <div
+        className="context-menu-item"
+        style={{
+          padding: '8px 12px',
+          cursor: 'pointer',
+          ':hover': {
+            background: '#f0f0f0',
+          },
+        }}
+        onClick={handleUnassignClick}
+      >
+        Unassign
+      </div>
+    </div>,
+    document.body // Render at the root of the DOM
+  ) : null;
 
   return (
     <>
@@ -107,23 +142,11 @@ const SortableItem = ({ id, worker, day, daySchedule, stationColor, handleChange
           </span>
         </div>
       </td>
-      {contextMenu.visible && (
-        <div
-          className="context-menu"
-          style={{ top: contextMenu.y, left: contextMenu.x, position: 'absolute', zIndex: 1000 }}
-          onClick={handleCloseContextMenu}
-        >
-          <div
-            className="context-menu-item"
-            onClick={handleUnassignClick}
-          >
-            Unassign
-          </div>
-        </div>
-      )}
+      {contextMenuPortal}
     </>
   );
 };
+
 
 const Dashboard = () => {
   const [schedule, setSchedule] = useState({});

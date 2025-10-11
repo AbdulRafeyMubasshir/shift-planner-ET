@@ -330,19 +330,20 @@ button:active {
   cursor: not-allowed;
 }
 .context-menu {
-  background-color: #fff;
+  position: fixed; /* Already set inline, but ensure consistency */
+  background: #fff;
   border: 1px solid #ccc;
-  box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  padding: 5px;
   border-radius: 4px;
-  padding: 5px 0;
+  z-index: 10000; /* Already set inline, but for completeness */
 }
 
 .context-menu-item {
-  padding: 8px 16px;
+  padding: 8px 12px;
   cursor: pointer;
-  font-size: 14px;
 }
 
 .context-menu-item:hover {
-  background-color: #f0f0f0;
+  background: #f0f0f0;
 }
