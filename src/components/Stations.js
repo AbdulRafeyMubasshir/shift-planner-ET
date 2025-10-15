@@ -13,6 +13,15 @@ const excelDateToJS = (excelSerial) => {
   const date = new Date(Math.round((excelSerial - 25569) * 86400 * 1000));
   return date.toISOString().split('T')[0];
 };
+const formatDateToDDMMYYYY = (dateString) => {
+  if (!dateString) return '—';
+  const date = new Date(dateString);
+  if (isNaN(date)) return '—';
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
+};
 
 const Stations = () => {
   const [stations, setStations] = useState([]);
@@ -68,59 +77,59 @@ const Stations = () => {
   }, []);
 
   const handleFileUpload = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file || !organizationId) return;
+  const file = event.target.files?.[0];
+  if (!file || !organizationId) return;
 
-    const reader = new FileReader();
+  const reader = new FileReader();
 
-    reader.onload = async (e) => {
-      const data = new Uint8Array(e.target.result);
-      const workbook = XLSX.read(data, { type: 'array' });
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet);
+  reader.onload = async (e) => {
+    const data = new Uint8Array(e.target.result);
+    const workbook = XLSX.read(data, { type: 'array' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
-      const formattedData = jsonData.map((row) => {
-  const normalizedRow = Object.keys(row).reduce((acc, key) => {
-    acc[key.toLowerCase()] = row[key];
-    return acc;
-  }, {});
+    const formattedData = jsonData.map((row) => {
+      const normalizedRow = Object.keys(row).reduce((acc, key) => {
+        acc[key.toLowerCase()] = row[key];
+        return acc;
+      }, {});
 
-  return {
-    organization_id: organizationId,
-    date: typeof normalizedRow.date === 'number'
-      ? excelDateToJS(normalizedRow.date)
-      : normalizedRow.date || '',
-    day: capitalizeFirstLetter(normalizedRow.day || ''),
-    location: trimString(normalizedRow.location || ''),
-    time: normalizedRow.time || '',
-    hours: normalizedRow.hours || '',
-  };
-});
+      return {
+        organization_id: organizationId,
+        date: typeof normalizedRow.date === 'number'
+          ? excelDateToJS(normalizedRow.date)
+          : normalizedRow.date || '',
+        day: capitalizeFirstLetter(trimString(normalizedRow.day || '')),
+        location: trimString(normalizedRow.location || ''),
+        time: normalizedRow.time || '',
+        hours: normalizedRow.hours || '',
+      };
+    });
 
-      const { error } = await supabase
+    const { error } = await supabase
+      .from('stations')
+      .insert(formattedData);
+
+    if (error) {
+      console.error('Upload error:', error.message);
+    } else {
+      // Refetch the updated station list
+      const { data: updatedStations, error: fetchError } = await supabase
         .from('stations')
-        .insert(formattedData);
+        .select('*')
+        .eq('organization_id', organizationId);
 
-      if (error) {
-        console.error('Upload error:', error.message);
+      if (fetchError) {
+        console.error('Fetch after insert error:', fetchError.message);
       } else {
-        // Refetch the updated station list
-        const { data: updatedStations, error: fetchError } = await supabase
-          .from('stations')
-          .select('*')
-          .eq('organization_id', organizationId);
-
-        if (fetchError) {
-          console.error('Fetch after insert error:', fetchError.message);
-        } else {
-          setStations(updatedStations);
-        }
+        setStations(updatedStations);
       }
-    };
-
-    reader.readAsArrayBuffer(file);
+    }
   };
+
+  reader.readAsArrayBuffer(file);
+};
 
   const handleRowDoubleClick = (station) => {
     setSelectedStation(station);
@@ -222,7 +231,7 @@ const Stations = () => {
               onDoubleClick={() => handleRowDoubleClick(station)}
               className="clickable-row"
             >
-              <td>{station.date}</td>
+              <td>{formatDateToDDMMYYYY(station.date)}</td>
               <td>{station.day}</td>
               <td>{station.location}</td>
               <td>{station.time}</td>

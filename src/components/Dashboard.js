@@ -260,6 +260,16 @@ const Dashboard = () => {
     };
   }, [contextMenuOpen]);
 
+  const formatDateToDDMMYYYY = (dateString) => {
+  if (!dateString) return '—';
+  const date = new Date(dateString);
+  if (isNaN(date)) return '—';
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
+};
+
   const formatSchedule = async (allocatedSchedule) => {
     const formattedSchedule = {};
   
@@ -687,7 +697,7 @@ for (let r = 3; r <= 5; r++) {
    *  SCHEDULE TABLE HEADERS
    * ----------------------- */
   const headers = ['Day', ...daysOfWeek, '72h Limit'];
-  const datesRow = ['Date', ...daysOfWeek.map((day) => datesOfWeek[day] || '—'), 'Total Hours'];
+  const datesRow = ['Date', ...daysOfWeek.map((day) => formatDateToDDMMYYYY(datesOfWeek[day])), 'Total Hours'];
 
   worksheet.addRow([]);
   worksheet.addRow(headers);
@@ -1890,7 +1900,7 @@ setUnassignedStations(unassigned);
               {daysOfWeek.map((day) => (
   <th key={day}>
     {day} <br />
-    {datesOfWeek[day] ?? '—'}
+    {formatDateToDDMMYYYY(datesOfWeek[day])}
   </th>
 ))}
 
