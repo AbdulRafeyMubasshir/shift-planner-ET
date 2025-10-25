@@ -213,15 +213,17 @@ const Dashboard = () => {
       const organizationId = profile.organization_id;
       const { data: workersData, error: workerError } = await supabase
         .from('workers')
-        .select('name')
-        .eq('organization_id', organizationId);
+        .select('name, order_number')
+        .eq('organization_id', organizationId)
+        .order('order_number', { ascending: true }); // Sort by order_number ASC
 
       if (workerError) {
         console.error('Error fetching workers:', workerError);
         return;
       }
 
-      setWorkers(workersData.map(worker => worker.name).sort());
+      // Map to names only, preserving the sorted order
+      setWorkers(workersData.map(worker => worker.name));
     } catch (error) {
       console.error('Error in fetchWorkers:', error);
     }
@@ -289,106 +291,88 @@ const Dashboard = () => {
 };
 
   const formatSchedule = async (allocatedSchedule) => {
-    const formattedSchedule = {};
-  
-    // Step 1: Fill in assigned workers
-    allocatedSchedule.forEach((station) => {
-      if (station.allocatedTo && station.allocatedTo !== 'Unassigned') {
-        const worker = station.allocatedTo;
-  
-        if (!formattedSchedule[worker]) {
-          formattedSchedule[worker] = {};
-        }
-  
+  const formattedSchedule = {};
+
+  // Step 1: Fetch workers to ensure order
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || !session?.user) {
+    throw new Error("User not logged in");
+  }
+
+  const userId = session.user.id;
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('organization_id')
+    .eq('id', userId)
+    .single();
+
+  if (profileError || !profile) {
+    throw new Error("Could not fetch user profile");
+  }
+
+  const organizationId = profile.organization_id;
+  const { data: workersData, error: workerError } = await supabase
+    .from('workers')
+    .select('name')
+    .eq('organization_id', organizationId)
+    .order('order_number', { ascending: true });
+
+  if (workerError) {
+    throw new Error("Could not fetch workers");
+  }
+
+  const workers = workersData.map(worker => worker.name);
+
+  // Step 2: Initialize formattedSchedule with all workers in sorted order
+  workers.forEach((workerName) => {
+    formattedSchedule[workerName] = {};
+    daysOfWeek.forEach((day) => {
+      formattedSchedule[workerName][day] = {
+        location: 'Unassigned',
+        time: '',
+        date: datesOfWeek[day] || '',
+      };
+    });
+  });
+
+  // Step 3: Fill in assigned workers
+  allocatedSchedule.forEach((station) => {
+    if (station.allocatedTo && station.allocatedTo !== 'Unassigned') {
+      const worker = station.allocatedTo;
+      if (formattedSchedule[worker]) {
         formattedSchedule[worker][station.day] = {
           location: station.location,
           time: station.time,
           date: station.date,
         };
       }
-    });
-  
-    // Step 2: Fill in unassigned days for workers who were assigned
-    Object.keys(formattedSchedule).forEach((worker) => {
-      daysOfWeek.forEach((day) => {
-        if (!formattedSchedule[worker][day]) {
-          formattedSchedule[worker][day] = {
-            location: 'Unassigned',
-            time: '',
-          };
-        }
-      });
-    });
-  
-    // ✅ Step 3: Ensure all uploaded workers are included from Supabase
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-    if (sessionError || !session?.user) {
-      throw new Error("User not logged in");
     }
-  
-    const userId = session.user.id;
-  
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('organization_id')
-      .eq('id', userId)
-      .single();
-  
-    if (profileError || !profile) {
-      throw new Error("Could not fetch user profile");
-    }
-  
-    const organizationId = profile.organization_id;
-  
-    const { data: workersData, error: workerError } = await supabase
-      .from('workers')
-      .select('name')
-      .eq('organization_id', organizationId);
-  
-    if (workerError) {
-      throw new Error("Could not fetch workers");
-    }
-    // Step 2: Fetch unique dates from the stations table for the organization
-    const { data: stations, error: stationsError } = await supabase
+  });
+  console.log(formattedSchedule);
+  // Step 4: Fetch unique dates from the stations table for the organization
+  const { data: stations, error: stationsError } = await supabase
     .from('stations')
-    .select('date', { distinct: true })
+    .select('date')
     .eq('organization_id', organizationId);
 
-if (stationsError) {
-  throw new Error("Could not fetch stations data");
-}
-
-// Step 3: Map the unique dates to the corresponding days of the week
-const uniqueDates = [...new Set(stations.map(row => row.date))].sort((a, b) => new Date(a) - new Date(b));
-const newDatesOfWeek = {};
-daysOfWeek.forEach((day, index) => {
-  const date = uniqueDates[index];
-  if (date) {
-    newDatesOfWeek[day] = date;
+  if (stationsError) {
+    throw new Error("Could not fetch stations data");
   }
-});
 
-setDatesOfWeek(newDatesOfWeek);
-    const workers = JSON.parse(JSON.stringify(workersData)); // Keep consistent with original code
-  
-    workers.forEach((worker) => {
-      const workerName = worker.name;
-  
-      if (!formattedSchedule[workerName]) {
-        formattedSchedule[workerName] = {};
-  
-        daysOfWeek.forEach((day) => {
-          formattedSchedule[workerName][day] = {
-            location: 'Unassigned',
-            time: '',
-            date: newDatesOfWeek[day] || '',
-          };
-        });
-      }
-    });
-  
-    return formattedSchedule;
-  };
+  // Step 5: Map the unique dates to the corresponding days of the week
+  const uniqueDates = [...new Set(stations.map(row => row.date))].sort((a, b) => new Date(a) - new Date(b));
+  const newDatesOfWeek = {};
+  daysOfWeek.forEach((day, index) => {
+    const date = uniqueDates[index];
+    if (date) {
+      newDatesOfWeek[day] = date;
+    }
+  });
+
+  setDatesOfWeek(newDatesOfWeek);
+
+  return formattedSchedule;
+};
   
   const predefinedStationColors = {
   "CHARING CROSS": "#9BC1E6",
@@ -1543,115 +1527,121 @@ setUnassignedStations(unassigned);
   
 
   const fetchSchedule = async (weekEndingDate) => {
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-  
-  
-    if (sessionError || !session?.user) {
-      throw new Error("User not logged in");
-    }
-  
-    const userId = session.user.id;
-  
-    // Get user's organization ID
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('organization_id')
-      .eq('id', userId)
-      .single();
-  
-    if (profileError || !profile) {
-      console.error('Error fetching profile:', profileError);
-      return null;
-    }
-  
-    const organizationId = profile.organization_id;
-  
-    // Fetch schedule rows
-    const { data: rows, error: fetchError } = await supabase
-      .from('schedule_entries')
-      .select('*')
-      .eq('organization_id', organizationId)
-      .eq('week_ending', weekEndingDate);
-  
-    if (fetchError) {
-      console.error('Error fetching schedule:', fetchError);
-      return null;
-    }
-  
-    // Convert flat rows back to nested structure
-    const schedule = {};
-    const datesOfWeek = {};
-    let isLocked = false;
-  
-    for (const row of rows) {
-      const { worker_name, day_of_week, location, time, date, is_locked } = row;
-  
-      if (!schedule[worker_name]) {
-        schedule[worker_name] = {};
-      }
-  
-      schedule[worker_name][day_of_week] = {
-        location,
-        time,
-        date,
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+  if (sessionError || !session?.user) {
+    throw new Error("User not logged in");
+  }
+
+  const userId = session.user.id;
+
+  // Get user's organization ID
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('organization_id')
+    .eq('id', userId)
+    .single();
+
+  if (profileError || !profile) {
+    console.error('Error fetching profile:', profileError);
+    return null;
+  }
+
+  const organizationId = profile.organization_id;
+
+  // Fetch schedule rows
+  const { data: rows, error: fetchError } = await supabase
+    .from('schedule_entries')
+    .select('*')
+    .eq('organization_id', organizationId)
+    .eq('week_ending', weekEndingDate);
+
+  if (fetchError) {
+    console.error('Error fetching schedule:', fetchError);
+    return null;
+  }
+
+  // Fetch unassigned shifts
+  const { data: unassignedRows, error: unassignedError } = await supabase
+    .from('unassigned_shifts')
+    .select('*')
+    .eq('organization_id', organizationId)
+    .eq('week_ending', weekEndingDate);
+
+  if (unassignedError) {
+    console.error('Error fetching unassigned shifts:', unassignedError);
+    return null;
+  }
+
+  // Set unassigned shifts
+  const unassignedShifts = unassignedRows.map((row) => ({
+    day: row.day_of_week,
+    location: row.location,
+    time: row.time,
+    date: row.date || '',
+    assignedWorker: '',
+  }));
+  setUnassignedStations(unassignedShifts);
+
+  // Convert flat rows back to nested structure
+  const schedule = {};
+  const datesOfWeek = {};
+  let isLocked = false;
+
+  // Initialize schedule with all workers from state in sorted order
+  workers.forEach((worker) => {
+    schedule[worker] = {};
+    daysOfWeek.forEach((day) => {
+      schedule[worker][day] = {
+        location: 'Unassigned',
+        time: '',
+        date: '',
       };
-      if (!datesOfWeek[day_of_week]) {
-        datesOfWeek[day_of_week] = date;
-      }
-      isLocked = is_locked; // Set lock state (assumes all rows for week_ending have same is_locked)
-    }
-
-    // Fetch unassigned shifts
-    const { data: unassignedRows, error: unassignedError } = await supabase
-      .from('unassigned_shifts')
-      .select('*')
-      .eq('organization_id', organizationId)
-      .eq('week_ending', weekEndingDate);
-
-    if (unassignedError) {
-      console.error('Error fetching unassigned shifts:', unassignedError);
-      return null;
-    }
-
-    // Set unassigned shifts
-    const unassignedShifts = unassignedRows.map((row) => ({
-      day: row.day_of_week,
-      location: row.location,
-      time: row.time,
-      date: row.date || '',
-      assignedWorker: '',
-    }));
-    setUnassignedStations(unassignedShifts);
-
-    const weekEndingDated = new Date(weekEndingDate);
-
-    if (!(weekEndingDated instanceof Date) || isNaN(weekEndingDated)) {
-        throw new Error('Invalid date string passed to getWeekDates');
-    }
-    // Fill map from Sunday to Saturday
-    for (let i = 0; i < 7; i++) {
-        const date = new Date(weekEndingDated);
-        console.log(date);
-        date.setDate(weekEndingDated.getDate() - (6 - i));
-        console.log(date);
-        const formattedDate = date.toISOString().split('T')[0];
-        datesOfWeek[daysOfWeek[i]] = formattedDate;
-        console.log(datesOfWeek[daysOfWeek[i]]);
-    }
-    // Fill in unassigned days for each worker
-    Object.keys(schedule).forEach((worker) => {
-      daysOfWeek.forEach((day) => {
-        if (!schedule[worker][day]) {
-          schedule[worker][day] = {
-            location: 'Unassigned',
-            time: '',
-          };
-        }
-      });
     });
-    setIsScheduleLocked(isLocked); // Set the lock state
+  });
 
-    return { schedule, datesOfWeek };
+  // Populate with fetched data
+  for (const row of rows) {
+    const { worker_name, day_of_week, location, time, date, is_locked } = row;
+
+    if (!schedule[worker_name]) {
+      schedule[worker_name] = {};
+      daysOfWeek.forEach((day) => {
+        schedule[worker_name][day] = {
+          location: 'Unassigned',
+          time: '',
+          date: '',
+        };
+      });
+    }
+
+    schedule[worker_name][day_of_week] = {
+      location,
+      time,
+      date,
+    };
+    if (!datesOfWeek[day_of_week]) {
+      datesOfWeek[day_of_week] = date;
+    }
+    isLocked = is_locked; // Set lock state (assumes all rows for week_ending have same is_locked)
+  }
+    const weekEndingDated = new Date(weekEndingDate);
+    if (!(weekEndingDated instanceof Date) || isNaN(weekEndingDated)) {
+      throw new Error('Invalid date string passed to getWeekDates');
+    }
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(weekEndingDated);
+      date.setDate(weekEndingDated.getDate() - (6 - i));
+      const formattedDate = date.toISOString().split('T')[0];
+      if (!datesOfWeek[daysOfWeek[i]]) {
+        datesOfWeek[daysOfWeek[i]] = formattedDate;
+      }
+    }
+  
+
+  setIsScheduleLocked(isLocked); // Set the lock state
+
+  return { schedule, datesOfWeek };
 };
 
   const deleteSchedule = async (weekEndingDate) => {
