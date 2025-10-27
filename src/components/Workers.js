@@ -47,7 +47,7 @@ const Workers = () => {
         .from('workers')
         .select('*')
         .eq('organization_id', organizationId)
-        .order('created_at', { ascending: true });
+        .order('order_number', { ascending: true });
 
       if (error) {
         console.error('Error fetching workers:', error);

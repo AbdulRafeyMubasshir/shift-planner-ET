@@ -1819,6 +1819,7 @@ setUnassignedStations(unassigned);
 
     console.log('Calling handleSave...');
     //await handleSave();
+    setNeedsSave(true);
     console.log('Save completed');
   } catch (error) {
     console.error('Drag end error:', error);
